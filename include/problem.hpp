@@ -91,9 +91,6 @@ namespace NP {
 		// Should we write where we are in the analysis?
 		bool verbose;
 
-		// If using supernodes
-		bool use_supernodes;
-
 		Analysis_options()
 		: timeout(0)
 		, max_depth(0)
@@ -103,7 +100,6 @@ namespace NP {
 		, merge_use_job_finish_times(false)
 		, merge_depth(1)
 		, verbose(false)
-		, use_supernodes(true)
 		{
 		}
 	};
