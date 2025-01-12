@@ -14,6 +14,7 @@
 #include "statistics.hpp"
 #include "util.hpp"
 #include "global/state_space_data.hpp"
+#include "reconfiguration/attachment.hpp"
 
 namespace NP {
 
@@ -649,9 +650,10 @@ namespace NP {
 			State_ref_queue states;
 
 		public:
+			Reconfiguration::Attachment *attachment;
 
 			// initial node (for convenience for unit tests)
-			Schedule_node(unsigned int num_cores)
+			Schedule_node(unsigned int num_cores, Reconfiguration::Attachment *attachment = nullptr)
 				: lookup_key{ 0 }
 				, num_cpus(num_cores)
 				, finish_time{ 0,0 }
@@ -662,11 +664,12 @@ namespace NP {
 				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ Time_model::constants<Time>::infinity() }
 				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
+				, attachment(attachment)
 			{
 			}
 
 			// initial node
-			Schedule_node (unsigned int num_cores, const State_space_data<Time>& state_space_data)
+			Schedule_node (unsigned int num_cores, const State_space_data<Time>& state_space_data, Reconfiguration::Attachment *attachment)
 				: lookup_key{ 0 }
 				, num_cpus(num_cores)
 				, finish_time{ 0,0 }
@@ -676,6 +679,7 @@ namespace NP {
 				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ state_space_data.get_earliest_certain_seq_source_job_release() }
 				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
+				, attachment(attachment)
 			{
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
 			}
@@ -688,7 +692,8 @@ namespace NP {
 				const State_space_data<Time>& state_space_data,
 				const Time next_earliest_release,
 				const Time next_certain_source_job_release, // the next time a job without predecessor is certainly released
-				const Time next_certain_sequential_source_job_release // the next time a job without predecessor that can execute on a single core is certainly released
+				const Time next_certain_sequential_source_job_release, // the next time a job without predecessor that can execute on a single core is certainly released
+				Reconfiguration::Attachment *attachment
 			)
 				: scheduled_jobs{ from.scheduled_jobs, idx }
 				, lookup_key{ from.next_key(j) }
@@ -701,6 +706,7 @@ namespace NP {
 				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ next_certain_sequential_source_job_release }
 				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
+				, attachment(attachment)
 			{
 				update_ready_successors(from, idx, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, this->scheduled_jobs);
 				update_jobs_with_pending_succ(from, idx, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, this->scheduled_jobs);
@@ -710,6 +716,7 @@ namespace NP {
 			{
 				for (State* s : states)
 					delete s;
+				delete attachment;
 			}
 
 			const unsigned int number_of_scheduled_jobs() const

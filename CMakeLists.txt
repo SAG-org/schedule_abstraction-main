@@ -96,8 +96,8 @@ add_executable(nptest ${NPTEST_SOURCES})
 target_link_libraries(nptest ${CORE_LIBS})
 target_link_libraries(runtests ${CORE_LIBS})
 
-target_compile_features(runtests PUBLIC cxx_std_14)
-target_compile_features(nptest PUBLIC cxx_std_14)
+target_compile_features(runtests PUBLIC cxx_std_17)
+target_compile_features(nptest PUBLIC cxx_std_17)
 
 if (MSVC)
     target_compile_options(runtests PUBLIC "/Zc:__cplusplus")
