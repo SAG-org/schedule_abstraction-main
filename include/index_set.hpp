@@ -1,6 +1,8 @@
 #ifndef INDEX_SET_H
 #define INDEX_SET_H
 
+#include <stdint.h>
+
 namespace NP {
 
 		class Index_set
