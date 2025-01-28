@@ -36,6 +36,7 @@ namespace NP {
 			typedef std::vector<Susp_list> Successors;
 			typedef std::vector<Susp_list> Predecessors;
 			typedef Interval<unsigned int> Parallelism;
+			typedef Interval<Time> PP;
 
 			// system availability intervals
 			Core_availability core_avail;
@@ -46,6 +47,9 @@ namespace NP {
 			// keeps track of the earliest time a gang source job (a job with no predecessor that requires more than one core to execute) 
 			// is certainly arrived and certainly has enough free cores to start executing
 			Time earliest_certain_gang_source_job_disptach;
+
+			// Keeps track of the possible ROS2 polling points
+			PP polling_point_interval;
 
 			struct Running_job {
 				Job_index idx;
@@ -77,6 +81,7 @@ namespace NP {
 				, certain_jobs{}
 				, earliest_certain_successor_job_disptach{ Time_model::constants<Time>::infinity() }
 				, earliest_certain_gang_source_job_disptach{ state_space_data.get_earliest_certain_gang_source_job_release() }
+				, polling_point_interval {Interval<Time>(state_space_data.get_earliest_job_arrival(), state_space_data.get_earliest_certain_gang_source_job_release())}
 			{
 				assert(core_avail.size() > 0);
 			}
@@ -115,7 +120,14 @@ namespace NP {
 				// NOTE: must be done after the core availabilities have been updated
 				update_earliest_certain_gang_source_job_disptach(next_source_job_rel, scheduled_jobs, state_space_data);
 
+				// Compute what the polling point must have been if this job is the one that was dispatched
+				update_polling_point();
+
 				DM("*** new state: constructed " << *this << std::endl);
+			}
+
+			Interval<Time> polling_point() const {
+				return polling_point_interval;
 			}
 
 			Interval<Time> core_availability(unsigned long p = 1) const
@@ -312,6 +324,10 @@ namespace NP {
 			}
 
 		private:
+			void update_polling_point() {
+				return;
+			};
+
 			// update the list of jobs that are certainly running in the current system state 
 			// and returns the number of predecessors of job `j` that were certainly running on cores in the previous system state
 			int update_certainly_running_jobs_and_get_num_prec(const Schedule_state& from,

@@ -41,6 +41,7 @@ namespace NP {
 			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
 			typedef Schedule_state<Time> State;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
+			typedef Interval<Time> PP;
 
 			typedef Schedule_node<Time> Node;
 
