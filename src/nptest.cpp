@@ -335,6 +335,11 @@ static void print_header(){
 
 int main(int argc, char** argv)
 {
+
+	#ifdef CONFIG_PARALLEL
+	std::cout << "Parallel solving not yet supported for ROS" << std::endl;
+	return;
+	#endif
 	auto parser = optparse::OptionParser();
 
 	parser.description("Exact NP Schedulability Tester");

@@ -8,7 +8,6 @@
 
 using namespace NP;
 
-
 TEST_CASE("Index set: Set Subtract") {
 
     SUBCASE("Standard subtraction") {
