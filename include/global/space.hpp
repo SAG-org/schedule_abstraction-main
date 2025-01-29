@@ -770,6 +770,9 @@ namespace NP {
 						// create a new state resulting from scheduling j in state s on p cores and try to merge it with an existing state in node 'next'.							
 						new_or_merge_state(*next, *s, j.get_job_index(),
 							Interval<Time>{_st}, ftimes, next->get_scheduled_jobs(), next->get_jobs_with_pending_successors(), next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p);
+						
+						// TODO: Implement ROS dispatching
+						// If two states are made remember to call new_or_merge_state twice
 
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
 						// only do that if we stop the analysis when a deadline miss is found 

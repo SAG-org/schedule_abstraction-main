@@ -26,6 +26,8 @@ namespace NP {
 
 		template<class Time> class Schedule_node;
 
+		// Schedule_state represents a single system state in the SAG. i.e. a vertex in the graph.
+		// It holds all the relevant system information and provides functions to compute the information needed to further expand the graph
 		template<class Time> class Schedule_state
 		{
 		private:
@@ -37,6 +39,8 @@ namespace NP {
 			typedef std::vector<Susp_list> Predecessors;
 			typedef Interval<unsigned int> Parallelism;
 			typedef Interval<Time> PP;
+			typedef Time Priority;
+
 
 			// system availability intervals
 			Core_availability core_avail;
@@ -50,6 +54,15 @@ namespace NP {
 
 			// Keeps track of the possible ROS2 polling points
 			PP polling_point_interval;
+
+			// Priority of previous job that was dispatched, important for LP
+			Priority last_job_prio;
+
+			// ROS2 analysis GWS and EWS (Based on PP, but in initial state will be empty)
+			// TODO: Might cut these two out as they are computable from lp and probably only used once
+			Job_set guaranteed_wait_set; 
+			Job_set exhaustive_wait_set;
+			Job_set lower_priority;
 
 			struct Running_job {
 				Job_index idx;
@@ -66,7 +79,6 @@ namespace NP {
 					finish_time(finish_time)
 				{}
 			};
-
 			// imprecise set of certainly running jobs, on how many cores they run, and when they should finish
 			std::vector<Running_job> certain_jobs;
 
@@ -97,11 +109,13 @@ namespace NP {
 				const std::vector<const Job<Time>*>& ready_succ_jobs,
 				const State_space_data<Time>& state_space_data,
 				Time next_source_job_rel,
-				unsigned int ncores = 1)
+				unsigned int ncores = 1,
+				bool new_pp = false)
 			{
 				const Successors& successors_of = state_space_data.successors_suspensions;
 				const Predecessors& predecessors_of = state_space_data.predecessors_suspensions;
 				const Job_precedence_set & predecessors = state_space_data.predecessors_of(j);
+				
 				// update the set of certainly running jobs and
 				// get the number of cores certainly used by active predecessors
 				int n_prec= update_certainly_running_jobs_and_get_num_prec(from, j, start_times, finish_times, ncores, predecessors);
@@ -121,7 +135,11 @@ namespace NP {
 				update_earliest_certain_gang_source_job_disptach(next_source_job_rel, scheduled_jobs, state_space_data);
 
 				// Compute what the polling point must have been if this job is the one that was dispatched
-				update_polling_point();
+				update_polling_point(from, new_pp, start_times);
+
+				last_job_prio = state_space_data.jobs[j].get_priority();
+				// NOTE: must be done after updating last job prio
+				update_lp(ready_succ_jobs);
 
 				DM("*** new state: constructed " << *this << std::endl);
 			}
@@ -324,9 +342,29 @@ namespace NP {
 			}
 
 		private:
-			void update_polling_point() {
+			void update_lp(const std::vector<const Job<Time>*>& ready_succ_jobs) {
+				for (auto job : ready_succ_jobs) {
+					if (job->get_priority() < last_job_prio) {
+						lower_priority.add(job->get_job_index());
+					}
+				}
 				return;
-			};
+			}
+
+			void update_polling_point(const Schedule_state& from, bool new_pp,
+				 Interval<Time> start_times) 
+			{
+				if (new_pp) {
+					// This handles the cases where the job came from the set of ready jobs and not LP
+					// The values of start_times might change depending on if this state was made by:
+					//  1. EWS being empty
+					//  2. The job being in EWS but GWS being empty
+					polling_point_interval = start_times;
+				} else {
+					// In every other case the polling point stays the same from 
+					polling_point_interval = from.polling_point_interval;
+				}
+			}
 
 			// update the list of jobs that are certainly running in the current system state 
 			// and returns the number of predecessors of job `j` that were certainly running on cores in the previous system state
@@ -622,6 +660,8 @@ namespace NP {
 			Schedule_state(const Schedule_state& origin) = delete;
 		};
 
+		// A Schedule_node holds information which is shared between multiple system states
+		// When two branches of the SAG have the same dispatched jobs, they will be added to the same node 
 		template<class Time> class Schedule_node
 		{
 		private:
