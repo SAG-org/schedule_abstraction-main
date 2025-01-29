@@ -823,6 +823,30 @@ src/tests/io.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtests.dir/build.make CMakeFiles/runtests.dir/src/tests/io.cpp.s
 .PHONY : src/tests/io.cpp.s
 
+src/tests/ros.o: src/tests/ros.cpp.o
+.PHONY : src/tests/ros.o
+
+# target to build an object file
+src/tests/ros.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtests.dir/build.make CMakeFiles/runtests.dir/src/tests/ros.cpp.o
+.PHONY : src/tests/ros.cpp.o
+
+src/tests/ros.i: src/tests/ros.cpp.i
+.PHONY : src/tests/ros.i
+
+# target to preprocess a source file
+src/tests/ros.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtests.dir/build.make CMakeFiles/runtests.dir/src/tests/ros.cpp.i
+.PHONY : src/tests/ros.cpp.i
+
+src/tests/ros.s: src/tests/ros.cpp.s
+.PHONY : src/tests/ros.s
+
+# target to generate assembly for a file
+src/tests/ros.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtests.dir/build.make CMakeFiles/runtests.dir/src/tests/ros.cpp.s
+.PHONY : src/tests/ros.cpp.s
+
 src/tests/self_suspending_tasks.o: src/tests/self_suspending_tasks.cpp.o
 .PHONY : src/tests/self_suspending_tasks.o
 
@@ -946,6 +970,9 @@ help:
 	@echo "... src/tests/io.o"
 	@echo "... src/tests/io.i"
 	@echo "... src/tests/io.s"
+	@echo "... src/tests/ros.o"
+	@echo "... src/tests/ros.i"
+	@echo "... src/tests/ros.s"
 	@echo "... src/tests/self_suspending_tasks.o"
 	@echo "... src/tests/self_suspending_tasks.i"
 	@echo "... src/tests/self_suspending_tasks.s"

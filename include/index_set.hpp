@@ -1,6 +1,8 @@
 #ifndef INDEX_SET_H
 #define INDEX_SET_H
 
+// #include <memory>
+
 namespace NP {
 
 		class Index_set
@@ -84,6 +86,20 @@ namespace NP {
 				set_bit(idx, true);
 			}
 
+			// Function that returns a new set containing the difference between this and other
+			std::unique_ptr<Index_set> set_subtract(const Index_set& other) {
+				std::unique_ptr<Index_set> the_new_set = std::make_unique<Index_set>();
+				auto subtract_limit = std::min(the_set.size(), other.the_set.size());
+
+				// Explicit copy of this set into the return value
+				the_new_set->the_set.resize(the_set.size());  
+				std::copy(the_set.begin(), the_set.end(), the_new_set->the_set.begin());
+				
+				for (std::size_t i = 0; i < subtract_limit; ++i)
+					the_new_set->the_set[i] = the_set[i] & ~other.the_set[i];
+				return the_new_set;
+			};
+
 			friend std::ostream& operator<< (std::ostream& stream,
 			                                 const Index_set& s)
 			{
@@ -127,6 +143,8 @@ namespace NP {
 
 			// no accidental copies
 			Index_set(const Index_set& origin) = delete;
+
+			
 		};
 }
 
