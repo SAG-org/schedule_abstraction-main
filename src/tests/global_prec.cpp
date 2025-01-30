@@ -62,6 +62,31 @@ const std::string ts3_edges =
 "       1,        0,        2,        0\n"
 "       2,        0,        3,        0\n";
 
+// Should use 2 processors, and fails when used without precedence constraints: T2 could arrive before T0/1, and occupy a processor until after their deadline
+const std::string ts4_jobs =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority\n"
+"      0,      0,         0,           5,       10,       10,      15,        2\n"
+"      1,      0,         0,           5,       10,       10,      15,        4\n"
+"      2,      0,         0,           0,      100,      100,     200,        5\n";
+
+// These precedence constraints are not good because T1 has to wait for T0, causing it to miss its deadline
+const std::string ts4_edges_bad1 =
+"From TID, From JID,   To TID,   To JID\n"
+"       0,        0,        1,        0\n"
+"       0,        0,        2,        0\n";
+
+// These precedence constraints will work because T1 can start as soon as T0 starts, and T2 needs to wait
+const std::string ts4_edges_good =
+"From TID, From JID,   To TID,   To JID, 	Sus Min,	Sus Max,	Signal At\n"
+"       0,        0,        1,        0,		0,			0,			s\n"
+"       0,        0,        2,        0,		0,			0,			f\n";
+
+// These precedence constraints will NOT work because T1 is suspended 1 time unit after T0 starts, causing it to miss its deadline by 1 time unit
+const std::string ts4_edges_bad2 =
+"From TID, From JID,   To TID,   To JID, 	Sus Min,	Sus Max,	Signal At\n"
+"       0,        0,        1,        0,		0,			1,			s\n"
+"       0,        0,        2,        0,		0,			0,			f\n";
+
 TEST_CASE("[global-prec] taskset-1") {
 	auto dag_in = std::istringstream(ts1_edges);
 	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
@@ -172,4 +197,41 @@ TEST_CASE("[global-prec] taskset-3") {
 	CHECK(space->is_schedulable());
 
 	delete space;
+}
+
+TEST_CASE("[global-prec] taskset-4 with signal-at-start") {
+	auto dag_bad1 = std::istringstream(ts4_edges_bad1);
+	auto dag_bad2 = std::istringstream(ts4_edges_bad2);
+	auto dag_good = std::istringstream(ts4_edges_good);
+	auto prec_bad1 = NP::parse_precedence_file<dtime_t>(dag_bad1);
+	auto prec_bad2 = NP::parse_precedence_file<dtime_t>(dag_bad2);
+	auto prec_good = NP::parse_precedence_file<dtime_t>(dag_good);
+
+	auto in = std::istringstream(ts4_jobs);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob_bad0{jobs, {}};
+	NP::Scheduling_problem<dtime_t> prob_bad1{jobs, prec_bad1};
+	NP::Scheduling_problem<dtime_t> prob_bad2{jobs, prec_bad2};
+	NP::Scheduling_problem<dtime_t> prob_good{jobs, prec_good};
+	NP::Analysis_options opts;
+
+	prob_bad0.num_processors = 2;
+	prob_bad1.num_processors = 2;
+	prob_bad2.num_processors = 2;
+	prob_good.num_processors = 2;
+	auto space_bad0 = NP::Global::State_space<dtime_t>::explore(prob_bad0, opts);
+	auto space_bad1 = NP::Global::State_space<dtime_t>::explore(prob_bad1, opts);
+	auto space_bad2 = NP::Global::State_space<dtime_t>::explore(prob_bad2, opts);
+	auto space_good = NP::Global::State_space<dtime_t>::explore(prob_good, opts);
+
+	CHECK_FALSE(space_bad0->is_schedulable());
+	CHECK_FALSE(space_bad1->is_schedulable());
+	CHECK_FALSE(space_bad2->is_schedulable());
+	CHECK(space_good->is_schedulable());
+
+	delete space_bad0;
+	delete space_bad1;
+	delete space_bad2;
+	delete space_good;
 }

@@ -32,12 +32,13 @@ namespace NP {
 			typedef Schedule_state<Time> State;
 			typedef Schedule_node<Time> Node;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
-			typedef const Job<Time>* Job_ref;
+			typedef typename Schedule_state<Time>::Job_ref Job_ref;
+			typedef typename Schedule_state<Time>::Suspensions_list Suspensions_list;
+			typedef typename Schedule_state<Time>::Inter_job_constraints Inter_job_constraints;
 			typedef std::vector<Job_index> Job_precedence_set;
-			typedef std::vector<std::pair<Job_ref, Interval<Time>>> Suspensions_list;
 
 		private:
-			typedef std::multimap<Time, Job_ref> By_time_map;
+			typedef std::multimap<Time, const NP::Job<Time>*> By_time_map;
 
 			// not touched after initialization
 			By_time_map _successor_jobs_by_latest_arrival;
@@ -48,8 +49,7 @@ namespace NP {
 			std::vector<Job_precedence_set> _predecessors;
 
 			// not touched after initialization
-			std::vector<Suspensions_list> _predecessors_suspensions;
-			std::vector<Suspensions_list> _successors_suspensions;
+			std::vector<Inter_job_constraints> _suspensions;
 
 			// list of actions when a job is aborted
 			std::vector<const Abort_action<Time>*> abort_actions;
@@ -66,8 +66,7 @@ namespace NP {
 			const By_time_map& sequential_source_jobs_by_latest_arrival;
 			const By_time_map& gang_source_jobs_by_latest_arrival;
 			const std::vector<Job_precedence_set>& predecessors;
-			const std::vector<Suspensions_list>& predecessors_suspensions;
-			const std::vector<Suspensions_list>& successors_suspensions;
+			const std::vector<Inter_job_constraints>& suspensions;
 
 			State_space_data(const Workload& jobs,
 				const Precedence_constraints& edges,
@@ -82,20 +81,25 @@ namespace NP {
 				, jobs_by_deadline(_jobs_by_deadline)
 				, _predecessors(jobs.size())
 				, predecessors(_predecessors)
-				, _predecessors_suspensions(jobs.size())
-				, _successors_suspensions(jobs.size())
-				, predecessors_suspensions(_predecessors_suspensions)
-				, successors_suspensions(_successors_suspensions)
+				, _suspensions(jobs.size())
+				, suspensions(_suspensions)
 				, abort_actions(jobs.size(), NULL)
 			{
 				for (const auto& e : edges) {
-					_predecessors_suspensions[e.get_toIndex()].push_back({ &jobs[e.get_fromIndex()], e.get_suspension() });
+					if (e.get_type() == start_to_start) {
+						_suspensions[e.get_fromIndex()].start_before_start.push_back({ &jobs[e.get_toIndex()], e.get_suspension() });
+						_suspensions[e.get_toIndex()].start_after_start.push_back({ &jobs[e.get_fromIndex()], e.get_suspension() });
+					}
+					if (e.get_type() == finish_to_start) {
+						_suspensions[e.get_fromIndex()].finish_before_start.push_back({ &jobs[e.get_toIndex()], e.get_suspension() });
+						_suspensions[e.get_toIndex()].start_after_finish.push_back({ &jobs[e.get_fromIndex()], e.get_suspension() });
+					}
 					_predecessors[e.get_toIndex()].push_back(e.get_fromIndex());
-					_successors_suspensions[e.get_fromIndex()].push_back({ &jobs[e.get_toIndex()], e.get_suspension() });
 				}
 
 				for (const Job<Time>& j : jobs) {
-					if (_predecessors_suspensions[j.get_job_index()].size() > 0) {
+					const Inter_job_constraints &job_suspensions = _suspensions[j.get_job_index()];
+					if (job_suspensions.start_after_finish.size() + job_suspensions.start_after_start.size() > 0) {
 						_successor_jobs_by_latest_arrival.insert({ j.latest_arrival(), &j });
 					}
 					else if (j.get_min_parallelism() == 1) {
@@ -140,14 +144,19 @@ namespace NP {
 			Interval<Time> ready_times(const State& s, const Job<Time>& j) const
 			{
 				Interval<Time> r = j.arrival_window();
-				for (const auto& pred : predecessors_suspensions[j.get_job_index()])
+				for (const auto& pred : suspensions[j.get_job_index()].start_after_start)
 				{
-					auto pred_idx = pred.first->get_job_index();
-					auto pred_susp = pred.second;
 					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred_idx, ft);
-					r.lower_bound(ft.min() + pred_susp.min());
-					r.extend_to(ft.max() + pred_susp.max());
+					s.get_start_times(pred.first->get_job_index(), ft);
+					r.lower_bound(ft.min() + pred.second.min());
+					r.extend_to(ft.max() + pred.second.max());
+				}
+				for (const auto& pred : suspensions[j.get_job_index()].start_after_finish)
+				{
+					Interval<Time> ft{ 0, 0 };
+					s.get_finish_times(pred.first->get_job_index(), ft);
+					r.lower_bound(ft.min() + pred.second.min());
+					r.extend_to(ft.max() + pred.second.max());
 				}
 				return r;
 			}
@@ -173,17 +182,15 @@ namespace NP {
 					r.extend_to(s.core_availability(j.get_min_parallelism()).max());
 				}
 
-				for (const auto& pred : predecessors_suspensions[j.get_job_index()])
+				for (const auto& pred : suspensions[j.get_job_index()].start_after_start)
 				{
-					auto pred_idx = pred.first->get_job_index();
 					// skip if part of disregard
-					if (contains(disregard, pred_idx))
+					if (contains(disregard, pred.first->get_job_index()))
 						continue;
 
 					// if there is no suspension time and there is a single core, then
 					// predecessors are finished as soon as the processor becomes available
-					auto pred_susp = pred.second;
-					if (num_cpus == 1 && pred_susp.max() == 0)
+					if (num_cpus == 1 && pred.second.max() == 0)
 					{
 						r.lower_bound(avail_min);
 						r.extend_to(avail_min);
@@ -191,9 +198,31 @@ namespace NP {
 					else
 					{
 						Interval<Time> ft{ 0, 0 };
-						s.get_finish_times(pred_idx, ft);
-						r.lower_bound(ft.min() + pred_susp.min());
-						r.extend_to(ft.max() + pred_susp.max());
+						s.get_start_times(pred.first->get_job_index(), ft);
+						r.lower_bound(ft.min() + pred.second.min());
+						r.extend_to(ft.max() + pred.second.max());
+					}
+				}
+
+				for (const auto& pred : suspensions[j.get_job_index()].start_after_finish)
+				{
+					// skip if part of disregard
+					if (contains(disregard, pred.first->get_job_index()))
+						continue;
+
+					// if there is no suspension time and there is a single core, then
+					// predecessors are finished as soon as the processor becomes available
+					if (num_cpus == 1 && pred.second.max() == 0)
+					{
+						r.lower_bound(avail_min);
+						r.extend_to(avail_min);
+					}
+					else
+					{
+						Interval<Time> ft{ 0, 0 };
+						s.get_finish_times(pred.first->get_job_index(), ft);
+						r.lower_bound(ft.min() + pred.second.min());
+						r.extend_to(ft.max() + pred.second.max());
 					}
 				}
 				return r;

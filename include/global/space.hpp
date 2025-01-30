@@ -548,7 +548,11 @@ namespace NP {
 								Node& next =
 									new_node(new_n, j, j.get_job_index(), state_space_data, 0, 0, 0);
 								//const CoreAvailability empty_cav = {};
-								State& next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
+								State& next_s = new_state(
+										*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(),
+										new_n.get_jobs_with_pending_start_successors(), new_n.get_jobs_with_pending_finish_successors(),
+										new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin
+								);
 								next.add_state(&next_s);
 								num_states++;
 
@@ -768,7 +772,10 @@ namespace NP {
 						// next should always exist at this point, possibly without states in it
 						// create a new state resulting from scheduling j in state s on p cores and try to merge it with an existing state in node 'next'.							
 						new_or_merge_state(*next, *s, j.get_job_index(),
-							Interval<Time>{_st}, ftimes, next->get_scheduled_jobs(), next->get_jobs_with_pending_successors(), next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p);
+							Interval<Time>{_st}, ftimes, next->get_scheduled_jobs(),
+							next->get_jobs_with_pending_start_successors(), next->get_jobs_with_pending_finish_successors(),
+							next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p
+						);
 
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
 						// only do that if we stop the analysis when a deadline miss is found 
