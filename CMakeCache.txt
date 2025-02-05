@@ -31,7 +31,7 @@ CMAKE_BUILD_TYPE:STRING=
 CMAKE_COLOR_MAKEFILE:BOOL=ON
 
 //CXX compiler
-CMAKE_CXX_COMPILER:FILEPATH=/usr/bin/c++
+CMAKE_CXX_COMPILER:STRING=/usr/bin/c++
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
@@ -269,7 +269,7 @@ CTEST_SUBMIT_RETRY_DELAY:STRING=5
 DART_TESTING_TIMEOUT:STRING=1500
 
 //Enable debugging
-DEBUG:BOOL=OFF
+DEBUG:BOOL=yes
 
 //Path to a program.
 GITCOMMAND:FILEPATH=/usr/bin/git

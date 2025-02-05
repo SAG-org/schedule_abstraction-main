@@ -86,7 +86,7 @@ namespace NP {
 				set_bit(idx, true);
 			}
 
-			// Function that returns a new set containing the difference between this and other
+			// Returns a new set containing the result of a set minus between this and other
 			std::unique_ptr<Index_set> set_subtract(const Index_set& other) {
 				std::unique_ptr<Index_set> the_new_set = std::make_unique<Index_set>();
 				auto subtract_limit = std::min(the_set.size(), other.the_set.size());

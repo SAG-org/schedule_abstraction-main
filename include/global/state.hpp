@@ -62,7 +62,7 @@ namespace NP {
 			// TODO: Might cut these two out as they are computable from lp and probably only used once
 			Job_set guaranteed_wait_set; 
 			Job_set exhaustive_wait_set;
-			Job_set lower_priority;
+			std::vector<const Job<Time>*> lower_priority;
 
 			struct Running_job {
 				Job_index idx;
@@ -138,8 +138,10 @@ namespace NP {
 				update_polling_point(from, new_pp, start_times);
 
 				last_job_prio = state_space_data.jobs[j].get_priority();
+				
 				// NOTE: must be done after updating last job prio
 				update_lp(ready_succ_jobs);
+				update_gws_ews();
 
 				DM("*** new state: constructed " << *this << std::endl);
 			}
@@ -173,6 +175,14 @@ namespace NP {
 					ftimes = Interval<Time>{ 0, Time_model::constants<Time>::infinity() };
 					return false;
 				}
+			}
+
+			const Job_set* get_gws() const {
+				return &guaranteed_wait_set;
+			}
+
+			const Job_set* get_ews() const {
+				return &exhaustive_wait_set;
 			}
 
 			Time next_certain_gang_source_job_disptach() const
@@ -345,10 +355,21 @@ namespace NP {
 			void update_lp(const std::vector<const Job<Time>*>& ready_succ_jobs) {
 				for (auto job : ready_succ_jobs) {
 					if (job->get_priority() < last_job_prio) {
-						lower_priority.add(job->get_job_index());
+						lower_priority.push_back(job);
 					}
 				}
 				return;
+			}
+
+			void update_gws_ews() {
+				for (auto job: lower_priority) {
+					if (job->latest_arrival() <= polling_point_interval.from()) {
+						guaranteed_wait_set.add(job->get_job_index());
+					}
+					if (job->earliest_arrival() <= polling_point_interval.until()) {
+						exhaustive_wait_set.add(job->get_job_index());
+					}
+				}
 			}
 
 			void update_polling_point(const Schedule_state& from, bool new_pp,
