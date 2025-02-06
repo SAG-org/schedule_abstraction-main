@@ -1,7 +1,8 @@
 #ifndef INDEX_SET_H
 #define INDEX_SET_H
 
-// #include <memory>
+#include <memory>
+#include <stdint.h>
 
 namespace NP {
 
