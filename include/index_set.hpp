@@ -16,10 +16,10 @@ namespace NP {
 
 			// derive a new set by "cloning" an existing set and adding an index
 			Index_set(const Index_set& from, std::size_t idx)
-					: the_set(std::max(from.the_set.size(), (idx / 64) + 1))
+					: the_set(idx == -1 ? from.the_set.size() : std::max(from.the_set.size(), (idx / 64) + 1))
 			{
 				std::copy(from.the_set.begin(), from.the_set.end(), the_set.begin());
-				set_bit(idx, true);
+				if (idx != -1) set_bit(idx, true);
 			}
 
 			// create the diff of two job sets (intended for debugging only)
