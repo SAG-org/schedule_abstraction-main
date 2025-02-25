@@ -136,7 +136,7 @@ namespace NP {
 			}
 
 			// returns the ready time interval of `j` in `s`
-			// assumes all predecessors of j are completed
+			// assumes all predecessors of j are dispatched
 			Interval<Time> ready_times(const State& s, const Job<Time>& j) const
 			{
 				Interval<Time> r = j.arrival_window();
@@ -153,11 +153,11 @@ namespace NP {
 			}
 
 			// returns the ready time interval of `j` in `s` when dispatched on `ncores`
-			// assumes all predecessors of j are completed
-			// ignores the finish time of the predecessors in the `disregard` set.
+			// assumes all predecessors of j are dispatched
+			// disregards the finish times of some predecessors that j and j_low have in common
 			Interval<Time> ready_times(
-				const State& s, const Job<Time>& j,
-				const Job_precedence_set& disregard,
+				const State& s,
+				const Job<Time>& j, const Job_index j_low,
 				const unsigned int ncores = 1) const
 			{
 				Time avail_min = s.earliest_finish_time();
@@ -176,9 +176,17 @@ namespace NP {
 				for (const auto& pred : predecessors_suspensions[j.get_job_index()])
 				{
 					auto pred_idx = pred.first->get_job_index();
-					// skip if part of disregard
-					if (contains(disregard, pred_idx))
-						continue;
+
+					bool can_disregard = false;
+					for (const auto &low_suspension : predecessors_suspensions[j_low]) {
+						// skip if its also a predecessor of j_low and the suspension to j_low can not be smaller than to j
+						if (low_suspension.first->get_job_index() == pred_idx && low_suspension.second.min() >= pred.second.max()) {
+							can_disregard = true;
+							break;
+						}
+					}
+
+					if (can_disregard) continue;
 
 					// if there is no suspension time and there is a single core, then
 					// predecessors are finished as soon as the processor becomes available
@@ -214,7 +222,7 @@ namespace NP {
 				const Job<Time>& j_hp, const Job<Time>& j_ref,
 				const unsigned int ncores = 1) const
 			{
-				auto rt = ready_times(s, j_hp, predecessors_of(j_ref), ncores);
+				auto rt = ready_times(s, j_hp, j_ref.get_job_index(), ncores);
 				return std::max(rt.max(), earliest_ref_ready);
 			}
 

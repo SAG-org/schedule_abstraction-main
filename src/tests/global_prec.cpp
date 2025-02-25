@@ -173,3 +173,53 @@ TEST_CASE("[global-prec] taskset-3") {
 
 	delete space;
 }
+
+const std::string ts5_jobs =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority\n"
+"      0,      0,         0,           0,       10,       10,      10,        0\n"
+"      1,      1,         0,           0,       10,       10,      20,        1\n"
+"      2,      2,         0,           0,        5,        5,      26,        2\n";
+
+// This problem is infeasible since the first precedence constraint has a worst-case suspension of 100
+const std::string ts5_edges =
+"From TID, From JID,   To TID,   To JID,    Sus. min, Sus. max\n"
+"       0,        0,        1,        1,            0,        100\n"
+"       0,        0,        2,        2\n"
+;
+
+TEST_CASE("[global-prec] taskset-5 false negative") {
+	auto dag_in = std::istringstream(ts5_edges);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+	auto in = std::istringstream(ts5_jobs);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	REQUIRE(prec[0].get_maxsus() == 100);
+	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	delete space;
+}
+
+// The job dispatch order without deadline misses is J0 -> J1 -> J2
+// But, in an execution scenario where the suspension from J0 to J1 is 1, J2 would go before J1, causing J1 to miss its deadline.
+// Therefor, it should be unschedulable.
+const std::string ts6_jobs =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority\n"
+"      0,      0,         0,           0,       10,       10,      10,        0\n"
+"      1,      1,         0,           0,       10,       10,      21,        1\n"
+"      2,      2,         0,           0,        5,        5,      26,        2\n";
+
+const std::string ts6_edges =
+"From TID, From JID,   To TID,   To JID,    Sus. min, Sus. max\n"
+"       0,        0,        1,        1            0,        1\n"
+"       0,        0,        2,        2\n";
+
+TEST_CASE("[global-prec] taskset-6 false negative") {
+	auto dag_in = std::istringstream(ts6_edges);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+	auto in = std::istringstream(ts6_jobs);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	delete space;
+}
