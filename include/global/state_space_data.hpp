@@ -190,6 +190,9 @@ namespace NP {
 					const auto high_suspension = pred.second;
 					auto pred_idx = pred.first->get_job_index();
 
+					Interval<Time> ft{ 0, 0 };
+					s.get_finish_times(pred_idx, ft);
+
 					// If the suspension is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
 					if (high_suspension.max() == 0) {
@@ -197,6 +200,14 @@ namespace NP {
 						// If there is a single core, all predecessors of `j_high` must have finished when the core becomes available,
 						// since we assumed that all predecessors of `j_high` were already dispatched.
 						if (num_cpus == 1) continue;
+
+						// The optimization above can be generalized to multiple cores: when
+						// - `j_pred` is occupying the next core that will become available, and
+						// - the second core cannot become available until `j_pred` has finished
+						// we know that `j_pred` is certainly finished when `j_low` becomes ready.
+						if (ncores == 1 && ft.min() == s.core_availability(1).min() &&
+							ft.max() == s.core_availability(1).max() && ft.max() <= s.core_availability(2).min()
+						) continue;
 
 						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
 						bool can_disregard = false;
@@ -239,8 +250,6 @@ namespace NP {
 						continue;
 					}
 
-					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred_idx, ft);
 					latest_ready_high = std::max(latest_ready_high, ft.max() + high_suspension.max());
 				}
 				return latest_ready_high;
