@@ -30,11 +30,28 @@ namespace NP {
 
 		template<class Time> class Schedule_node;
 
+		struct Job_with_pending_succ {
+			Job_index job_idx;
+			bool is_certainly_finished;
+			Job_with_pending_succ(Job_index idx, bool certainly_finished = false)
+				: job_idx(idx), is_certainly_finished(certainly_finished)
+			{}
+		};
+
 		template<class Time> class Schedule_state
 		{
 		private:
 
-			typedef std::vector<std::pair<Job_index, Interval<Time>>> Job_finish_times;
+			struct Job_finish_time {
+				Job_index job_idx;
+				Interval<Time> finish_time;
+				bool certainly_finished;
+
+				Job_finish_time(Job_index idx, Interval<Time> finish_time, bool certainly_finished = false)
+					: job_idx(idx), finish_time(finish_time), certainly_finished(certainly_finished)
+				{}
+			};
+			typedef std::vector<Job_finish_time> Job_finish_times;
 			typedef std::vector<Interval<Time>> Core_availability;
 			typedef std::vector<std::pair<const Job<Time>*, Interval<Time>>> Susp_list;
 			typedef std::vector<Susp_list> Successors;
@@ -92,7 +109,7 @@ namespace NP {
 				Interval<Time> start_times,
 				Interval<Time> finish_times,
 				const Job_set& scheduled_jobs,
-				const std::vector<Job_index>& jobs_with_pending_succ,
+				const std::vector<Job_with_pending_succ>& jobs_with_pending_succ,
 				const std::vector<const Job<Time>*>& ready_succ_jobs,
 				const State_space_data<Time>& state_space_data,
 				Time next_source_job_rel,
@@ -137,7 +154,7 @@ namespace NP {
 				Interval<Time> start_times,
 				Interval<Time> finish_times,
 				const Job_set& scheduled_jobs,
-				const std::vector<Job_index>& jobs_with_pending_succ,
+				const std::vector<Job_with_pending_succ>& jobs_with_pending_succ,
 				const std::vector<const Job<Time>*>& ready_succ_jobs,
 				const State_space_data<Time>& state_space_data,
 				Time next_source_job_rel,
@@ -183,16 +200,35 @@ namespace NP {
 				return core_avail[0].min();
 			}
 
+			// return true if the finish time interval the job `j` is known. If so, it writes the finish time interval in `ftimes` 
 			bool get_finish_times(Job_index j, Interval<Time>& ftimes) const
 			{
 				int offset = jft_find(j);
-				if (offset < job_finish_times.size() && job_finish_times[offset].first == j)
+				if (offset < job_finish_times.size() && job_finish_times[offset].job_idx == j)
 				{
-					ftimes = job_finish_times[offset].second;
+					ftimes = job_finish_times[offset].finish_time;
 					return true;
 				}
 				else {
 					ftimes = Interval<Time>{ 0, Time_model::constants<Time>::infinity() };
+					return false;
+				}
+			}
+
+			// return true if the finish time interval the job `j` is known. If so, it writes the finish time interval in `ftimes` 
+			// and whether it is certainly finished in the current state in `is_certainly_finished`.
+			bool get_finish_times(Job_index j, Interval<Time>& ftimes, bool& is_certainly_finished) const
+			{
+				int offset = jft_find(j);
+				if (offset < job_finish_times.size() && job_finish_times[offset].job_idx == j)
+				{
+					ftimes = job_finish_times[offset].finish_time;
+					is_certainly_finished = job_finish_times[offset].certainly_finished;
+					return true;
+				}
+				else {
+					ftimes = Interval<Time>{ 0, Time_model::constants<Time>::infinity() };
+					is_certainly_finished = false;
 					return false;
 				}
 			}
@@ -513,38 +549,69 @@ namespace NP {
 			void update_job_finish_times(const Schedule_state& from,
 				Job_index j, Interval<Time> start_times,
 				Interval<Time> finish_times,
-				const std::vector<Job_index>& jobs_with_pending_succ)
+				const std::vector<Job_with_pending_succ>& jobs_with_pending_succ)
 			{
 				Time lst = start_times.max();
 				Time lft = finish_times.max();
 
+				bool single_core = (core_avail.size() == 1);
+
 				job_finish_times.reserve(jobs_with_pending_succ.size());
 
 				auto it = from.job_finish_times.begin();
-				for (Job_index job : jobs_with_pending_succ)
+				for (const Job_with_pending_succ& job : jobs_with_pending_succ)
 				{
-					if (job == j)
-						job_finish_times.emplace_back(job, finish_times);
+					if (job.job_idx == j)
+						job_finish_times.emplace_back(job.job_idx, finish_times, job.is_certainly_finished);
 					else {
 						// we find the finish time interval of `job` from the previous state. 
 						// Note that if `job` has non-completed successors in the new state,
 						// it must have had non-completed successors in the previous state too, 
 						// thus there is no risk to reach the end iterator
-						while (it->first != job) {
+						while (it->job_idx != job.job_idx) {
 							assert(it != from.job_finish_times.end());
 							it++;
 						}
-						Time job_eft = it->second.min();
-						Time job_lft = it->second.max();
+						Time job_eft = it->finish_time.min();
+						Time job_lft = it->finish_time.max();
 						// if there is a single core, then we know that 
 						// jobs that were disptached in the past cannot have 
 						// finished later than when our new job starts executing
-						if (core_avail.size() == 1)
+						if (single_core)
 						{
 							if (job_lft > lst)
 								job_lft = lst;
 						}
-						job_finish_times.emplace_back(job, Interval<Time>{ job_eft, job_lft });
+
+						// Assuming:
+						// (1) j_low cannot start until at least 1 core is available.
+						// (2) So if all cores are certainly occupied until j_pred is finished, we can disregard j_pred.
+						//
+						// We will prove the following claim: 
+						// (4) If ft(j).min() <= ca(1).min && ft(j).max() <= ca(2).min() then no core can be available
+						//     before j is finished.
+						// where ft(j) denotes finish time of j and ca(n) denotes core_availability(n)
+						// Proof:
+						// (A) Assume for a contradiction that a core becomes available at time T before j is finished at time F > T.
+						//
+						// (B) Since a core became available at time T, it must hold that ca(1).min <= T <= ca(1).max().
+						//
+						// (C) Since j_pred finishes at time F > T, we know that at least 2 cores must be available at time F:
+						//     - the one that became available at time T, and
+						//     - the one used by j_pred
+						//
+						// (D) So ca(2).min() <= F <= ft(j).max() hence ca(2).min() <= ft(j).max().
+						//
+						// (E) From the condition ft(j).max() <= ca(2).min(), it follows that ft(j).max() == ft(j).min() == F.
+						//
+						// (F) Since ca(1).min() <= T < F == ft(j).min(), it follows that ca(1).min() < ft(j).min(),
+						//     which contradicts the condition that ft(j).min() <= ca(1).min().
+						// Alternatively, if we check that `ft(j_pred).max() < ca(2).min()` (strictly smaller),
+						// we would already derive a contradiction at (E) since ca(2).min() <= ft(j_pred).max() contradicts ft(j_pred).max() < ca(2).min()
+
+						// we use this property to decide whether `j` is certainly finished before dispatching any future job on the platform
+						bool is_certainly_finished = single_core || job.is_certainly_finished || job_lft < core_avail[1].min() || (job_lft <= core_avail[1].min() && job_eft <= core_avail[0].min());
+						job_finish_times.emplace_back(job.job_idx, Interval<Time>{ job_eft, job_lft }, is_certainly_finished);
 					}
 				}
 			}
@@ -583,22 +650,22 @@ namespace NP {
 				while (other_it != other_ft.end() &&
 					state_it != job_finish_times.end())
 				{
-					if (other_it->first == state_it->first)
+					if (other_it->job_idx == state_it->job_idx)
 					{
 						if (conservative) {
-							if (other_in_this == false && !other_it->second.contains(state_it->second))
+							if (other_in_this == false && !other_it->finish_time.contains(state_it->finish_time))
 							{
 								all_jobs_intersect = false; // not all the finish time intervals of this are within those of other
 								break;
 							}
-							else if (other_in_this == true && !state_it->second.contains(other_it->second))
+							else if (other_in_this == true && !state_it->finish_time.contains(other_it->finish_time))
 							{
 								all_jobs_intersect = false; // not all the finish time intervals of other are within those of this
 								break;
 							}
 						}
 						else {
-							if (!other_it->second.intersects(state_it->second))
+							if (!other_it->finish_time.intersects(state_it->finish_time))
 							{
 								all_jobs_intersect = false;
 								break;
@@ -609,7 +676,7 @@ namespace NP {
 					}
 					else if (conservative)
 						return false; // the list of finish time intervals do not match
-					else if (other_it->first < state_it->first)
+					else if (other_it->job_idx < state_it->job_idx)
 						other_it++;
 					else
 						state_it++;
@@ -626,13 +693,14 @@ namespace NP {
 				while (from_it != from_pwj.end() &&
 					state_it != job_finish_times.end())
 				{
-					if (from_it->first == state_it->first)
+					if (from_it->job_idx == state_it->job_idx)
 					{
-						state_it->second.widen(from_it->second);
+						state_it->finish_time.widen(from_it->finish_time);
+						state_it->certainly_finished = state_it->certainly_finished && from_it->certainly_finished;
 						from_it++;
 						state_it++;
 					}
-					else if (from_it->first < state_it->first)
+					else if (from_it->job_idx < state_it->job_idx)
 						from_it++;
 					else
 						state_it++;
@@ -646,9 +714,9 @@ namespace NP {
 				int end = job_finish_times.size();
 				while (start < end) {
 					int mid = (start + end) / 2;
-					if (job_finish_times[mid].first == j)
+					if (job_finish_times[mid].job_idx == j)
 						return mid;
-					else if (job_finish_times[mid].first < j)
+					else if (job_finish_times[mid].job_idx < j)
 						start = mid + 1;  // mid is too small, mid+1 might fit.
 					else
 						end = mid;
@@ -678,7 +746,7 @@ namespace NP {
 			Job_set scheduled_jobs;
 			// set of jobs that have all their predecessors completed and were not dispatched yet
 			std::vector<const Job<Time>*> ready_successor_jobs;
-			std::vector<Job_index> jobs_with_pending_succ;
+			std::vector<Job_with_pending_succ> jobs_with_pending_succ;
 
 			hash_value_t lookup_key;
 			Interval<Time> finish_time;
@@ -840,7 +908,7 @@ namespace NP {
 				return ready_successor_jobs;
 			}
 
-			const std::vector<Job_index>& get_jobs_with_pending_successors() const
+			const std::vector<Job_with_pending_succ>& get_jobs_with_pending_successors() const
 			{
 				return jobs_with_pending_succ;
 			}
@@ -1065,29 +1133,32 @@ namespace NP {
 			{
 				jobs_with_pending_succ.reserve(from.jobs_with_pending_succ.size() + 1);
 				bool added_j = successors_of[j].empty(); // we only need to add j if it has successors
-				for (Job_index job : from.jobs_with_pending_succ)
+				for (const Job_with_pending_succ& job : from.jobs_with_pending_succ)
 				{					
-					if (!added_j && job > j)
+					if (!added_j && job.job_idx > j)
 					{
-						jobs_with_pending_succ.push_back(j);
+						jobs_with_pending_succ.emplace_back(j);
 						added_j = true;
 					}
 
 					bool successor_pending = false;
-					for (const auto& succ : successors_of[job]) {
+					bool successor_dispatched = false;
+					for (const auto& succ : successors_of[job.job_idx]) {
 						auto to_job = succ.first->get_job_index();
-						if (!scheduled_jobs.contains(to_job))
-						{
+						if (scheduled_jobs.contains(to_job))
+							successor_dispatched = true;
+						else
 							successor_pending = true;
+							
+						if (successor_pending && successor_dispatched)
 							break;
-						}
 					}
 					if (successor_pending)
-						jobs_with_pending_succ.push_back(job);
+						jobs_with_pending_succ.emplace_back(job.job_idx, successor_dispatched);
 				}
 
 				if (!added_j)
-					jobs_with_pending_succ.push_back(j);
+					jobs_with_pending_succ.emplace_back(j);
 			}
 		};
 
