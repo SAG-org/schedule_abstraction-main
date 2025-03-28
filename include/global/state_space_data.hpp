@@ -194,12 +194,12 @@ namespace NP {
 					bool is_cert_finished;
 					s.get_finish_times(pred_idx, ft, is_cert_finished);
 
-					if (high_suspension.max() == 0 && is_cert_finished)
-						continue;
-
 					// If the suspension is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
 					if (high_suspension.max() == 0) {
+						if (is_cert_finished) 
+							continue;
+
 						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
 						bool can_disregard = false;
 						for (const auto &successor_suspension : successors_suspensions[pred_idx]) {

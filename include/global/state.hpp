@@ -588,7 +588,7 @@ namespace NP {
 						// (2) So if all cores are certainly occupied until j_pred is finished, we can disregard j_pred.
 						//
 						// We will prove the following claim: 
-						// (4) If ft(j).min() <= ca(1).min && ft(j).max() <= ca(2).min() then no core can be available
+						// (3) If ft(j).min() <= ca(1).min && ft(j).max() <= ca(2).min() then no core can be available
 						//     before j is finished.
 						// where ft(j) denotes finish time of j and ca(n) denotes core_availability(n)
 						// Proof:
