@@ -196,21 +196,9 @@ namespace NP {
 
 					// If the suspension is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
-					if (high_suspension.max() == 0) {
-						if (is_cert_finished) 
-							continue;
-
-						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
-						bool can_disregard = false;
-						for (const auto &successor_suspension : successors_suspensions[pred_idx]) {
-							if (dispatched(n, *successor_suspension.first)) {
-								can_disregard = true;
-								break;
-							}
-						}
-						if (can_disregard) continue;
-					}
-
+					if (high_suspension.max() == 0 && is_cert_finished) 
+						continue;
+					
 					// If j_pred is a predecessor of both j_high and j_low, we can disregard it if the maximum suspension from j_pred to j_high
 					// is at most the minimum suspension from j_pred to j_low: susp_max(j_pred -> j_high) <= susp_min(j_pred -> j_low).
 					//
