@@ -654,7 +654,7 @@ namespace NP {
 								break;
 							}
 						}
-						if (is_finished == false)
+						if (not is_finished)
 							return false;
 					}
 				}

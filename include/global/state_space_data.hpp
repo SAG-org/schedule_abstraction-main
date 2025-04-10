@@ -162,11 +162,11 @@ namespace NP {
 					return true;
 
 				// The optimization above can be generalized to multiple cores, using the following knowledge:
-				// We will prove the following claim: (ft(j) denotes finish time ofj and ca(n) denotes core_availability(n))
+				// We will prove the following claim: (ft(j) denotes finish time of j and ca(n) denotes core_availability(n))
 				// If ft(j).min() <= ca(1).min && ft(j).max() <= ca(2).min() then no core can be available
 				//     before j is finished.
 				// Proof:
-				// (A) Assume for a contradiction that a core becomes available at time T before j_pred is finished at time F > T.
+				// (A) Assume for a contradiction that a core becomes available at time T before j is finished at time F > T.
 				//
 				// (B) Since a core became available at time T, it must hold that ca(1).min <= T <= ca(1).max().
 				//
