@@ -699,7 +699,8 @@ namespace NP {
 				{
 					// if the job priority is lower than than the minimum priority of the next dispatched job, it will not be dispatched next
 					// (remember that lower number means higher priority)
-					if (j.get_priority() > s->get_next_dispatched_job_min_priority())
+					Job_ref next_dispatch_min_prio = s->get_next_dispatched_job_min_priority();
+					if (next_dispatch_min_prio != NULL && next_dispatch_min_prio->higher_priority_than(j))
 						continue;
 
 					const auto& costs = j.get_all_costs();

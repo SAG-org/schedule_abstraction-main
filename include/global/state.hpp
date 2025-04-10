@@ -34,6 +34,8 @@ namespace NP {
 		{
 		private:
 
+			typedef const Job<Time>* Job_ref;
+
 			struct Job_finish_time {
 				Job_index job_idx;
 				Interval<Time> finish_time;
@@ -82,10 +84,10 @@ namespace NP {
 			Job_finish_times job_finish_times;
 
 			typedef typename Job<Time>::Priority Priority;
-			typedef std::pair<Priority, Job_index> Succ_priority;
-			// for each job `j` in `jobs_with_pending_succ`, `ready_successor_jobs_prio` contains the priority of the smallest priority job that is certainly ready right after `j` completes its execution
-			std::vector<Succ_priority> ready_successor_jobs_prio;
-			Priority min_next_prio; // the minimum priority of the first job disptached after the current state
+			// for each job `j` in `jobs_with_pending_succ`, `ready_successor_jobs_prio` contains the highest-priority job that is certainly ready right after `j` completes its execution
+			std::vector<Job_ref> ready_successor_jobs_prio;
+			// the job with a priority at least equal to that of the first job disptached after the current state
+			Job_ref min_next_prio_job; 
 
 		public:
 
@@ -95,7 +97,7 @@ namespace NP {
 				, certain_jobs{}
 				, earliest_certain_successor_job_disptach{ Time_model::constants<Time>::infinity() }
 				, earliest_certain_gang_source_job_disptach{ state_space_data.get_earliest_certain_gang_source_job_release() }
-				, min_next_prio{ Time_model::constants<Time>::infinity() }
+				, min_next_prio_job{ NULL }
 			{
 				assert(core_avail.size() > 0);
 			}
@@ -136,6 +138,8 @@ namespace NP {
 
 				update_ready_successor_jobs_prio(from, state_space_data.jobs[j], finish_times, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, scheduled_jobs);
 
+				assert(ready_successor_jobs_prio.size() <= ready_succ_jobs.size());
+
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
@@ -145,7 +149,7 @@ namespace NP {
 				core_avail = Core_availability(num_processors, Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
-				min_next_prio = Time_model::constants<Time>::infinity();
+				min_next_prio_job = NULL;
 				ready_successor_jobs_prio.clear();
 				assert(core_avail.size() > 0);
 			}
@@ -189,6 +193,8 @@ namespace NP {
 				ready_successor_jobs_prio.clear();
 				update_ready_successor_jobs_prio(from, state_space_data.jobs[j], finish_times, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, scheduled_jobs);
 
+				assert(ready_successor_jobs_prio.size() <= ready_succ_jobs.size());
+
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
@@ -220,9 +226,9 @@ namespace NP {
 				}
 			}
 
-			Priority get_next_dispatched_job_min_priority() const
+			Job_ref get_next_dispatched_job_min_priority() const
 			{
-				return min_next_prio;
+				return min_next_prio_job;
 			}
 
 			Time next_certain_gang_source_job_disptach() const
@@ -656,66 +662,61 @@ namespace NP {
 			}
 
 			void update_ready_successor_jobs_prio(const Schedule_state& from,
-				const Job<Time>& j, 
-				const Interval<Time>& finish_times,
+				const Job<Time>& j_dispatched, 
+				const Interval<Time>& j_disp_finish_times,
 				const Successors& successors_of,
 				const Predecessors& predecessors_of,
 				const Job_set& scheduled_jobs)
 			{
 				ready_successor_jobs_prio.reserve(from.ready_successor_jobs_prio.size() + 1);
-				Job_index j_idx = j.get_job_index();
+				Job_index j_dispatched_idx = j_dispatched.get_job_index();
 
-				bool job_to_insert = false;
-				Priority max_prio = Time_model::constants<Time>::infinity();
-				Job_index job_id;
+				Job_ref job_to_insert = NULL;
 
-				// find the highest priority successor of j that that will be ready as soon as j finishes its execution
-				for (const auto& s : successors_of[j_idx]) {
+				// find the highest priority successor of `j_dispatched` that will be ready as soon as `j_dispatched` finishes its execution
+				for (const auto& s : successors_of[j_dispatched_idx]) {
 					Job_index succ_id = s.first->get_job_index();
 
-					// if `s` was not dispatched yet, can execute on a single core, is ready right after `j` finishes, and has no other predecessor than `j` or all other predecessors certainly finished
+					// if `s` was not dispatched yet, can execute on a single core, is ready right after `j_dispatched` finishes, and has no other predecessor than `j_dispatched` or all other predecessors certainly finished
 					if (!scheduled_jobs.contains(succ_id)
 						&& s.first->get_min_parallelism() == 1
-						&& s.second.max() == 0 && s.first->latest_arrival() <= finish_times.min()
-						&& succ_ready_right_after_pred(j_idx, succ_id, finish_times, successors_of, predecessors_of, scheduled_jobs))
+						&& s.second.max() == 0 && s.first->latest_arrival() <= j_disp_finish_times.min()
+						&& succ_ready_right_after_pred(j_dispatched_idx, succ_id, j_disp_finish_times, successors_of, predecessors_of, scheduled_jobs))
 					{
-						if (max_prio > s.first->get_priority()) {
-							job_to_insert = true;
-							max_prio = s.first->get_priority();
-							job_id = s.first->get_job_index();
+						if (job_to_insert==NULL || s.first->higher_priority_than(*job_to_insert)) {
+							job_to_insert = s.first;
 						}
 					}
 				}
 
 				// copy the ready successor jobs priorities, remove the job `j` that was just scheduled and add the prio of the successor job of `j`
-				for (Succ_priority sp : from.ready_successor_jobs_prio) {
-					if (sp.second != j_idx) {
-						if (job_to_insert) {
+				for (Job_ref sp : from.ready_successor_jobs_prio) {
+					Job_index sp_idx = sp->get_job_index();
+					if (sp_idx != j_dispatched_idx) {
+						if (job_to_insert != NULL) {
 							// if the job to insert is already in the list, we do not insert it a second time
-							if (sp.second == job_id)
-								job_to_insert = false;
+							if (sp == job_to_insert)
+								job_to_insert = NULL;
 
-							if (sp.first > max_prio) {
-								ready_successor_jobs_prio.push_back({ max_prio, job_id });
-								job_to_insert = false;
+							if (job_to_insert->higher_priority_than(*sp)) {
+								ready_successor_jobs_prio.push_back(job_to_insert);
+								job_to_insert = NULL;
 							}
 						}
 						ready_successor_jobs_prio.push_back(sp);
 					}
 				}
 
-				if (job_to_insert)
-					ready_successor_jobs_prio.push_back({ max_prio, job_id });
+				if (job_to_insert != NULL)
+					ready_successor_jobs_prio.push_back(job_to_insert);
 
 				int num_cpus = core_avail.size();
 
 				// calculate the minimum priority of the new job to be dispatched
 				if (ready_successor_jobs_prio.size() < num_cpus)
-					min_next_prio = Time_model::constants<Time>::infinity();
+					min_next_prio_job = NULL;
 				else
-					min_next_prio = ready_successor_jobs_prio[num_cpus - 1].first;
-
-				assert(ready_successor_jobs_prio.size() <= ready_successor_jobs.size());
+					min_next_prio_job = ready_successor_jobs_prio[num_cpus - 1];
 			}
 
 			// Check whether the job_finish_times overlap.
