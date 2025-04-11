@@ -618,33 +618,34 @@ namespace NP {
 				if (core_avail.size() == 1)
 					return true;
 
-				// if `succ` has a single predecessors, then àt most one predecessor may not be finished
+				// if `succ` has a single predecessors, then at most one predecessor may not be finished
 				if (predecessors_of[succ].size() == 1)
 					return true;
 
-				for (const auto& p : predecessors_of[succ]) // check if all other predecessors of `succ` are certainly finished or that they have no other successors than `succ`
+				// check if all other predecessors of `succ` are certainly finished or that they have no other successors than `succ`
+				for (const auto& p : predecessors_of[succ]) 
 				{
 					Job_index j_idx = p.first->get_job_index();
-					// if `p` was not dispatched yet, then `succ` cannot be ready
-					if (!scheduled_jobs.contains(j_idx))
-						return false;
-
-					//  if `p` has a single successor and zero delay between the completion of `p` and time `succ` becomes ready, then we disregard `p` 
-					if (successors_of[j_idx].size() == 1 && p.second.max() == 0)
-						continue;
-
-					// if `p` is certainly finished and the max delay until `succ` is ready is certainly elapsed before `pred` is finished, then we disregard `p`
-					Interval<Time> ftimes_p(0, 0);
-					if (get_finish_times(j_idx, ftimes_p))
-					{
-						if (ftimes_p.max() + p.second.max() <= finish_times.min())
-							continue;
-					} 
-					else if (p.second.max() > 0)
-						return false;
-
 					if (j_idx != pred)
 					{
+						// if `p` was not dispatched yet, then `succ` cannot be ready
+						if (!scheduled_jobs.contains(j_idx))
+							return false;
+
+						//  if `p` has a single successor and zero delay between the completion of `p` and time `succ` becomes ready, then we disregard `p` 
+						if (successors_of[j_idx].size() == 1 && p.second.max() == 0)
+							continue;
+
+						// if `p` is certainly finished and the max delay until `succ` is ready is certainly elapsed before `pred` is finished, then we disregard `p`
+						Interval<Time> ftimes_p(0, 0);
+						if (get_finish_times(j_idx, ftimes_p))
+						{
+							if (ftimes_p.max() + p.second.max() <= finish_times.min())
+								continue;
+						} 
+						else if (p.second.max() > 0)
+							return false;
+
 						// If at least one successor of `p` has already been dispatched, then `p` must have finished already.
 						bool is_finished = false;
 						for (const auto& succ_of_pred : successors_of[j_idx])
