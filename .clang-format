@@ -7,4 +7,8 @@ DerivePointerAlignment: false
 PointerAlignment: Left
 AllowShortFunctionsOnASingleLine: Empty
 BreakBeforeBraces: Attach
-
+AllowShortIfStatementsOnASingleLine: Never
+RemoveEmptyLinesInUnwrappedLines: true
+RemoveSemicolon: true
+SeparateDefinitionBlocks: Always
+AllowShortBlocksOnASingleLine: Empty
