@@ -20,13 +20,15 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
+          sudo apt update
+          sudo apt install -y clang-format-21
           sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-21 100
-          clang-format --version
+          clang-format-21 --version
 
       - name: Run clang-format
         run: |
           FILES=$(find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.cc" -o -name "*.c" -o -name "*.h" \) -not -path "./lib/*" -not -path "./build/*")
-          clang-format -i $FILES
+          clang-format-21 -i $FILES
 
       - name: Check for formatting issues
         run: |
