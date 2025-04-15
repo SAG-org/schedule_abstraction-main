@@ -32,7 +32,7 @@ jobs:
 
       - name: Check for formatting issues
         run: |
-          if [[ `git status --porcelain` ]]; then
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
             echo "❌ Formatting issues found. Please run clang-format locally." >&2
             git diff
             exit 1
