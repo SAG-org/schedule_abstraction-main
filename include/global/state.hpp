@@ -318,6 +318,10 @@ namespace NP {
 
 				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
 
+				if (min_next_prio_job == NULL || (other.min_next_prio_job != NULL && other.min_next_prio_job->higher_priority_than(*min_next_prio_job))) {
+					min_next_prio_job = other.min_next_prio_job;
+				}
+
 				DM("+++ merged " << other << " into " << *this << std::endl);
 				return true;
 			}
@@ -637,13 +641,13 @@ namespace NP {
 							continue;
 
 						// if `p` is certainly finished and the max delay until `succ` is ready is certainly elapsed before `pred` is finished, then we disregard `p`
-						Interval<Time> ftimes_p(0, 0);
+						/*Interval<Time> ftimes_p(0, 0);
 						if (get_finish_times(j_idx, ftimes_p))
 						{
 							if (ftimes_p.max() + p.second.max() <= finish_times.min())
 								continue;
 						} 
-						else if (p.second.max() > 0)
+						else*/ if (p.second.max() > 0)
 							return false;
 
 						// If at least one successor of `p` has already been dispatched, then `p` must have finished already.
@@ -681,7 +685,7 @@ namespace NP {
 					// if `s` was not dispatched yet, can execute on a single core, is ready right after `j_dispatched` finishes, and has no other predecessor than `j_dispatched` or all other predecessors certainly finished
 					if (!scheduled_jobs.contains(succ_id)
 						&& s.first->get_min_parallelism() == 1
-						&& s.second.max() == 0 && s.first->latest_arrival() <= j_disp_finish_times.min()
+						&& s.second.max() == 0 && s.first->latest_arrival() <= j_dispatched.earliest_arrival() + j_dispatched.get_cost().min() // j_disp_finish_times.min()
 						&& succ_ready_right_after_pred(j_dispatched_idx, succ_id, j_disp_finish_times, successors_of, predecessors_of, scheduled_jobs))
 					{
 						if (job_to_insert==NULL || s.first->higher_priority_than(*job_to_insert)) {
