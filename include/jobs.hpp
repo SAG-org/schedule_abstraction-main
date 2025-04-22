@@ -44,7 +44,6 @@ namespace NP {
 		typedef std::vector<Job<Time>> Job_set;
 		typedef Time Priority; // Make it a time value to support EDF
 		typedef std::map<unsigned int, Interval<Time>> Cost;
-
 	private:
 		Interval<Time> arrival;
 		Interval<unsigned int> parallelism; // on which range of core numbers can it run in parallel
