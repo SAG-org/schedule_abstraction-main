@@ -26,6 +26,7 @@
 #include "problem.hpp"
 #include "global/state_space_data.hpp"
 #include "clock.hpp"
+#include "mem.hpp"
 
 #include "global/state.hpp"
 #include "object_pool.hpp"
@@ -55,7 +56,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.num_processors, 
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_depth, opts.early_exit, opts.verbose);
+					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose);
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -110,6 +111,11 @@ namespace NP {
 			bool was_timed_out() const
 			{
 				return timed_out;
+			}
+
+			bool out_of_memory() const
+			{
+				return mem_out;
 			}
 
 			//currently unused, only required to compile nptest.cpp correctly
@@ -255,6 +261,7 @@ namespace NP {
 			bool verbose;
 			bool aborted;
 			bool timed_out;
+			bool mem_out;
 			bool observed_deadline_miss;
 			bool early_exit;
 
@@ -288,7 +295,9 @@ namespace NP {
 			tbb::enumerable_thread_specific<unsigned long> states_counter;
 #endif
 			Processor_clock cpu_time;
+			Memory_monitor mem_consumption;
 			const double timeout;
+			const long max_mem; // in kiB
 			const unsigned int num_cpus;
 
 			State_space_data<Time> state_space_data;
@@ -299,6 +308,7 @@ namespace NP {
 				unsigned int num_cpus,
 				Merge_options merge_options,
 				double max_cpu_time = 0,
+				long max_memory = 0,
 				unsigned int max_depth = 0,
 				bool early_exit = true,
 				bool verbose = false)
@@ -308,6 +318,8 @@ namespace NP {
 				, observed_deadline_miss(false)
 				, be_naive(false)		
 				, timeout(max_cpu_time)
+				, mem_out(false)
+				, max_mem(max_memory)
 				, max_depth(max_depth)
 				, merge_opts(merge_options)
 				, verbose(verbose)
@@ -546,6 +558,16 @@ namespace NP {
 					aborted = true;
 					timed_out = true;
 				}
+			}
+
+			long check_memory_abort()
+			{
+				long mem = mem_consumption;
+				if (max_mem && mem > max_mem) {
+					aborted = true;
+					mem_out = true;
+				}
+				return mem;
 			}
 
 			void check_depth_abort()
@@ -942,10 +964,13 @@ namespace NP {
 					width[current_job_count] = { n, num_states - last_num_states };
 					last_num_states = num_states;
 
-					if (verbose) {
-						int time = get_cpu_time(); 
-						if (time > last_time+4) { // update progress information approxmately every 4 seconds of runtime
-							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count <<"/"<< target_depth<<")";
+					int time = get_cpu_time();
+					if (time > last_time + 4) {
+						// check memory usage
+						long mem = check_memory_abort();
+						if (verbose) {						 
+							// update progress information approxmately every 4 seconds of runtime
+							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count <<"/"<< target_depth<<"); " << mem/1024 << " MiB";
 							last_time = time;
 						}
 					}

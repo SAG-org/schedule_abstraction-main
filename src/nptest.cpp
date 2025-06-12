@@ -3,13 +3,7 @@
 #include <fstream>
 #include <algorithm>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <Windows.h>
-#include <psapi.h>
-#else
-#include <sys/resource.h>
-#endif
+#include "mem.hpp"
 
 #include "OptionParser.h"
 
@@ -51,6 +45,7 @@ static unsigned int num_processors = 1;
 static bool want_dot_graph;
 #endif
 static double timeout;
+static long mem_max = 0; // in KiB
 static unsigned int max_depth = 0;
 
 static bool want_rta_file;
@@ -65,6 +60,7 @@ static unsigned int num_worker_threads = 0;
 struct Analysis_result {
 	bool schedulable;
 	bool timeout;
+	bool out_of_memory;
 	unsigned long long number_of_nodes, number_of_states, number_of_edges, max_width, number_of_jobs;
 	double cpu_time;
 	std::string graph;
@@ -100,6 +96,7 @@ static Analysis_result analyze(
 	NP::Analysis_options opts;
 	opts.verbose = want_verbose;
 	opts.timeout = timeout;
+	opts.max_memory_usage = mem_max;
 	opts.max_depth = max_depth;
 	opts.early_exit = !continue_after_dl_miss;
 	opts.be_naive = want_naive;
@@ -151,6 +148,7 @@ static Analysis_result analyze(
 	Analysis_result results = Analysis_result{
 		space->is_schedulable(),
 		space->was_timed_out(),
+		space->out_of_memory(),
 		space->number_of_nodes(),
 		space->number_of_states(),
 		space->number_of_edges(),
@@ -256,18 +254,8 @@ static void process_file(const std::string& fname)
 			}
 		}
 
-#ifdef _WIN32 
-		PROCESS_MEMORY_COUNTERS pmc;
-		auto currentProcess = GetCurrentProcess();
-		GetProcessMemoryInfo(currentProcess, &pmc, sizeof(pmc));
-		long mem_used = pmc.PeakWorkingSetSize / 1024; //in kiB
-		CloseHandle(currentProcess);
-#else
-		struct rusage u;
-		long mem_used = 0;
-		if (getrusage(RUSAGE_SELF, &u) == 0)
-			mem_used = u.ru_maxrss;
-#endif
+		Memory_monitor mem;
+		long mem_used = mem;
 
 		std::cout << fname;
 
@@ -285,6 +273,7 @@ static void process_file(const std::string& fname)
 		          << ",  " << std::fixed << result.cpu_time
 		          << ",  " << ((double) mem_used) / (1024.0)
 		          << ",  " << (int) result.timeout
+				  << ",  " << (int)result.out_of_memory
 		          << ",  " << num_processors
 		          << std::endl;
 	} catch (std::ios_base::failure& ex) {
@@ -329,6 +318,7 @@ static void print_header(){
 	          << ", CPU time"
 	          << ", memory"
 	          << ", timeout"
+			  << ", mem_out"
 	          << ", #CPUs"
 	          << std::endl;
 }
@@ -359,6 +349,10 @@ int main(int argc, char** argv)
 	parser.add_option("-l", "--time-limit").dest("timeout")
 	      .help("maximum CPU time allowed (in seconds, zero means no limit)")
 	      .set_default("0");
+
+	parser.add_option("--mem-limit").dest("mem_max")
+		.help("maximum memory consumption allowed (in KiB, zero means no limit)")
+		.set_default("0");
 
 	parser.add_option("-d", "--depth-limit").dest("depth")
 	      .help("abort graph exploration after reaching given depth (>= 2)")
@@ -446,6 +440,8 @@ int main(int argc, char** argv)
 	want_dense = time_model == "dense";
 
 	timeout = options.get("timeout");
+
+	mem_max = options.get("mem_max");
 
 	max_depth = options.get("depth");
 	if (options.is_set_by_user("depth")) {

@@ -213,7 +213,7 @@ examples/abort.jobs.csv,  1,  4,  5,  4,  0,  0.000089,  1796.000000,  0,  1
 
 ```
 $ build/nptest -g examples/abort.jobs.csv -c
-examples/abort.jobs.csv,  0,  4,  5,  4,  0,  0.000088,  1760.000000,  0,  1
+examples/abort.jobs.csv,  0,  4,  5,  4,  0,  0.000088,  1760.000000,  0, 0,  1
 ```
 
 Without the job abort action specified in [examples/abort.actions.csv](examples/abort.actions.csv), the workload can indeed miss deadlines and is thus unschedulable.
@@ -232,8 +232,9 @@ The output is provided in CSV format and consists of the following columns:
 6. The number of edges that were discovered. 
 7. The maximum “exploration front width” of the schedule graph, which is the maximum number of unprocessed states  that are queued for exploration (at any point in time). 
 8. The CPU time used in the analysis (in seconds).
-9. The peak amount of memory used (as reported by `getrusage()`), divided by 1024. Due to non-portable differences in `getrusage()`, on Linux this reports the memory usage in megabytes, whereas on macOS it reports the memory usage in kilobytes. On Windows, the memory usage reporting is deactivated. It will always show 0.
+9. The peak amount of memory used. Due differences between platforms, on Linux and Windows this reports the memory usage in megabytes, whereas on macOS it reports the memory usage in kilobytes. 
 10. A timeout indicator: 1 if the state-space exploration was aborted due to reaching the time limit (as set with the `-l` option); 0 otherwise. 
+11. An out-of-memory indicator: 1 if the state-space exploration was aborted due to exceeding the memory-usage limit (as set with the `--mem-limit` option); 0 otherwise. 
 11. The number of processors assumed during the analysis. 
 
 Pass the `--header` flag to `nptest` to print out column headers. 

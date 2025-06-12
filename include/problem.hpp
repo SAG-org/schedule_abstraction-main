@@ -69,6 +69,8 @@ namespace NP {
 		// Zero means unlimited.
 		double timeout;
 
+		long max_memory_usage = 0; // in KiB
+
 		// After how many scheduling decisions (i.e., depth of the
 		// schedule graph) should we terminate the analysis?
 		// Zero means unlimited.
