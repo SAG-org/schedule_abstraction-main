@@ -41,6 +41,9 @@ static std::string aborts_file;
 static bool want_multiprocessor = false;
 static unsigned int num_processors = 1;
 
+static bool platform_defined = false;
+static std::string platform_file;
+
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 static bool want_dot_graph;
 #endif
@@ -74,6 +77,7 @@ static Analysis_result analyze(
 	std::istream &in,
 	std::istream &prec_in,
 	std::istream &aborts_in,
+	std::istream &platform_in,
     bool &is_yaml)
 {
 #ifdef CONFIG_PARALLEL
@@ -86,11 +90,19 @@ static Analysis_result analyze(
 	// Parse precedence constraints
 	std::vector<NP::Precedence_constraint<Time>> edges = is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in) : NP::parse_precedence_file<Time>(prec_in);
 
+	// Parse platform specification if provided
+	std::vector<Interval<Time>> platform_spec;
+	if (platform_defined) {
+		platform_spec = is_yaml ? NP::parse_platform_spec_yaml<Time>(platform_in) : NP::parse_platform_spec_csv<Time>(platform_in);
+		// Update num_processors based on platform specification
+		num_processors = platform_spec.size();
+	}
+
 	NP::Scheduling_problem<Time> problem{
         jobs,
 		edges,
 		NP::parse_abort_file<Time>(aborts_in),
-		num_processors};
+		platform_spec};
 
 	// Set common analysis options
 	NP::Analysis_options opts;
@@ -167,16 +179,17 @@ static Analysis_result process_stream(
 	std::istream &in,
 	std::istream &prec_in,
 	std::istream &aborts_in,
+	std::istream &platform_in,
     bool is_yaml)
 {
 	if (want_multiprocessor && want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
 	else if (want_multiprocessor && !want_dense)
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
 	else if (want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
 	else
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
 }
 
 static void process_file(const std::string& fname)
@@ -186,14 +199,19 @@ static void process_file(const std::string& fname)
 
 		auto empty_dag_stream = std::istringstream("\n");
 		auto empty_aborts_stream = std::istringstream("\n");
+		auto empty_platform_stream = std::istringstream("\n");
 		auto dag_stream = std::ifstream();
 		auto aborts_stream = std::ifstream();
+		auto platform_stream = std::ifstream();
 
 		if (want_precedence)
 			dag_stream.open(precedence_file);
 
 		if (want_aborts)
 			aborts_stream.open(aborts_file);
+
+		if (platform_defined)
+			platform_stream.open(platform_file);
 
 		std::istream &dag_in = want_precedence ?
 			static_cast<std::istream&>(dag_stream) :
@@ -203,9 +221,13 @@ static void process_file(const std::string& fname)
 			static_cast<std::istream&>(aborts_stream) :
 			static_cast<std::istream&>(empty_aborts_stream);
 
+		std::istream &platform_in = platform_defined ?
+			static_cast<std::istream&>(platform_stream) :
+			static_cast<std::istream&>(empty_platform_stream);
+
 		if (fname == "-")
 		{
-			result = process_stream(std::cin, dag_in, aborts_in, false);
+			result = process_stream(std::cin, dag_in, aborts_in, platform_in, false);
 		}
 		else {
             // check the extension of the file
@@ -216,7 +238,7 @@ static void process_file(const std::string& fname)
             }
 
 			auto in = std::ifstream(fname, std::ios::in);
-			result = process_stream(in, dag_in, aborts_in, is_yaml);
+			result = process_stream(in, dag_in, aborts_in, platform_in, is_yaml);
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			if (want_dot_graph) {
@@ -370,6 +392,10 @@ int main(int argc, char** argv)
 	      .help("set the number of processors of the platform")
 	      .set_default("1");
 
+	parser.add_option("--platform").dest("platform_file")
+	      .help("name of the file that contains the platform specification (CSV or YAML)")
+	      .set_default("");
+
 	parser.add_option("--threads").dest("num_threads")
 	      .help("set the number of worker threads (parallel analysis)")
 	      .set_default("0");
@@ -468,11 +494,27 @@ int main(int argc, char** argv)
 	}
 	aborts_file = (const std::string&) options.get("abort_file");
 
-	want_multiprocessor = options.is_set_by_user("num_processors");
-	num_processors = options.get("num_processors");
-	if (!num_processors || num_processors > MAX_PROCESSORS) {
-		std::cerr << "Error: invalid number of processors\n" << std::endl;
-		return 1;
+
+	platform_defined = options.is_set_by_user("platform_file");
+	if (platform_defined) {
+		want_multiprocessor = true;
+		platform_file = (const std::string&) options.get("platform_file");
+		if (platform_file.empty()) {
+			std::cerr << "Error: platform file not specified" << std::endl;
+			return 1;
+		}
+		if (options.is_set_by_user("num_processors")) {
+			std::cerr << "Error: options --platform and -m are exclusive." << std::endl;
+			return 1; // num_processors is set by platform file, not by user
+		}
+	}
+	else {
+		want_multiprocessor = options.is_set_by_user("num_processors");
+		num_processors = options.get("num_processors");
+		if (!num_processors || num_processors > MAX_PROCESSORS) {
+			std::cerr << "Error: invalid number of processors\n" << std::endl;
+			return 1;
+		}
 	}
 
 	want_rta_file = options.get("rta");

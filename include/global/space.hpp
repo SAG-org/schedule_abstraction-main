@@ -55,7 +55,7 @@ namespace NP {
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.num_processors, 
+				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
 					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose);
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
@@ -299,13 +299,14 @@ namespace NP {
 			const double timeout;
 			const long max_mem; // in kiB
 			const unsigned int num_cpus;
+			const std::vector<Interval<Time>> cores_initial_state;
 
 			State_space_data<Time> state_space_data;
 
 			State_space(const Workload& jobs,
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
-				unsigned int num_cpus,
+				const std::vector<Interval<Time>>& cores_initial_state,
 				Merge_options merge_options,
 				double max_cpu_time = 0,
 				long max_memory = 0,
@@ -330,7 +331,8 @@ namespace NP {
 				, width(jobs.size(), { 0,0 })
 				, rta(jobs.size())
 				, current_job_count(0)
-				, num_cpus(num_cpus)
+				, num_cpus(cores_initial_state.size())
+				, cores_initial_state(cores_initial_state)
 				, early_exit(early_exit)
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 				, nodes_storage(jobs.size() + 1)
@@ -394,7 +396,7 @@ namespace NP {
 			{
 				// construct initial state
 				Node& n = new_node(0, num_cores, state_space_data);
-				State& s = new_state(num_cores, state_space_data);
+				State& s = new_state(cores_initial_state, state_space_data);
 				n.add_state(&s);
 #ifdef CONFIG_PARALLEL
 				states_counter.local()++;
@@ -930,12 +932,11 @@ namespace NP {
 
 			void explore()
 			{
-				int last_time;
+				int last_time = get_cpu_time();
 				unsigned int target_depth;
 				
 				if (verbose) {
 					std::cout << "0%";
-					last_time = get_cpu_time();
 					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
 				}
 

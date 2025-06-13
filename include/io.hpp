@@ -339,7 +339,71 @@ namespace NP {
 		return abort_actions;
 	}
 
+	template<class Time>
+	std::vector<Interval<Time>> parse_platform_spec_csv(std::istream& in)
+	{
+		// Skip header line.
+		next_line(in);
 
+		// Read mandatory field: number of cores (m)
+		unsigned int m;
+		in >> m;
+
+		std::vector<Interval<Time>> platform(m);
+
+		for (unsigned int i = 0; i < m; i++) {
+			if (more_fields_in_line(in)) {
+				next_field(in);
+				Time Amin, Amax;
+				in >> Amin;
+				next_field(in);
+				in >> Amax;
+				platform[i] = Interval<Time>{ Amin, Amax };
+			}
+			else {
+				platform[i] = Interval<Time>{ 0, 0 };
+			}
+		}
+
+		if (more_fields_in_line(in))
+			std::cerr << "Warning: Extra fields in platform specification CSV file, ignoring them." << std::endl;
+
+		return platform;
+	}
+
+	template<class Time>
+	std::vector<Interval<Time>> parse_platform_spec_yaml(std::istream& in)
+	{
+		std::vector<Interval<Time>> platform;
+		try {
+			in.clear();
+			in.seekg(0, std::ios::beg);
+			YAML::Node data = YAML::Load(in);
+			YAML::Node plat = data["platform"];
+			unsigned int m = plat["cores"].as<unsigned int>();
+			platform.resize(m, Interval<Time>{0, 0});
+			if (plat["core_availabilities"]) {
+				YAML::Node avail = plat["core_availabilities"];
+				for (unsigned int i = 0; i < m && i < avail.size(); i++) {
+					YAML::Node core = avail[i];
+					if (core.IsSequence()) {
+						Time Amin = core[0].as<Time>();
+						Time Amax = core[1].as<Time>();
+						platform[i] = Interval<Time>{ Amin, Amax };
+					}
+					else if (core.IsMap()) {
+						Time Amin = core["Amin"].as<Time>();
+						Time Amax = core["Amax"].as<Time>();
+						platform[i] = Interval<Time>{ Amin, Amax };
+					}
+				}
+			}
+		}
+		catch (const YAML::Exception& e) {
+			std::cerr << "Error reading platform specification YAML file: " << e.what() << std::endl;
+		}
+		return platform;
+	}
 }
 
 #endif

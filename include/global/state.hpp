@@ -85,6 +85,28 @@ namespace NP {
 				assert(core_avail.size() > 0);
 			}
 
+			Schedule_state(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
+				: core_avail{ proc_initial_state.size() }
+				, certain_jobs{}
+				, earliest_certain_successor_job_disptach{ Time_model::constants<Time>::infinity() }
+				, earliest_certain_gang_source_job_disptach{ state_space_data.get_earliest_certain_gang_source_job_release() }
+			{
+				assert(core_avail.size() > 0);
+				std::vector<Time> amin, amax;
+				amin.reserve(proc_initial_state.size());
+				amax.reserve(proc_initial_state.size());
+				for(const auto& a : proc_initial_state) {
+					amin.push_back(a.min());
+					amax.push_back(a.max());
+				}
+				std::sort(amin.begin(), amin.end());
+				std::sort(amax.begin(), amax.end());
+				for (unsigned int i = 0; i < proc_initial_state.size(); i++) {
+					core_avail[i].extend_to(amax[i]);
+					core_avail[i].lower_bound(amin[i]);
+				}
+			}
+
 			// transition: new state by scheduling a job 'j' in an existing state 'from'
 			Schedule_state(
 				const Schedule_state& from,
@@ -129,6 +151,28 @@ namespace NP {
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
 				assert(core_avail.size() > 0);
+			}
+
+			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
+			{
+				core_avail = Core_availability(proc_initial_state.size(), Interval<Time>(Time(0), Time(0)));
+				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
+				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
+				
+				assert(core_avail.size() > 0);
+				std::vector<Time> amin, amax;
+				amin.reserve(proc_initial_state.size());
+				amax.reserve(proc_initial_state.size());
+				for (const auto& a : proc_initial_state) {
+					amin.push_back(a.min());
+					amax.push_back(a.max());
+				}
+				std::sort(amin.begin(), amin.end());
+				std::sort(amax.begin(), amax.end());
+				for (unsigned int i = 0; i < proc_initial_state.size(); i++) {
+					core_avail[i].extend_to(amax[i]);
+					core_avail[i].lower_bound(amin[i]);
+				}
 			}
 
 			void reset(
