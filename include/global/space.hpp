@@ -930,12 +930,11 @@ namespace NP {
 
 			void explore()
 			{
-				int last_time;
+				int last_time = get_cpu_time();
 				unsigned int target_depth;
 				
 				if (verbose) {
-					std::cout << "0%";
-					last_time = get_cpu_time();
+					std::cout << "0%; 0s";					
 					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
 				}
 
@@ -968,9 +967,13 @@ namespace NP {
 					if (time > last_time + 4) {
 						// check memory usage
 						long mem = check_memory_abort();
-						if (verbose) {						 
+						if (verbose) {		
 							// update progress information approxmately every 4 seconds of runtime
-							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count <<"/"<< target_depth<<"); " << mem/1024 << " MiB";
+#ifdef __APPLE__
+							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count << "/" << target_depth << "); " << time << "s; " << mem / 1024 << "KiB";
+#else
+							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count << "/" << target_depth << "); " << time << "s; " << mem / 1024 << "MiB";
+#endif
 							last_time = time;
 						}
 					}
@@ -1031,8 +1034,13 @@ namespace NP {
 #endif
 					current_job_count++;
 				}
-				if (verbose)
-					std::cout << "\r100%" << std::endl << "Terminating" << std::endl;
+				if (verbose) {
+#if __APPLE__
+					std::cout << "\r100%; " << get_cpu_time() << "s; " << mem_consumption / 1024 << "KiB" << std::endl << "Terminating" << std::endl;
+#else
+					std::cout << "\r100%; " << get_cpu_time() << "s; " << mem_consumption / 1024 << "MiB" << std::endl << "Terminating" << std::endl;
+#endif
+				}
 
 #ifndef CONFIG_COLLECT_SCHEDULE_GRAPH
 				// clean out any remaining nodes
