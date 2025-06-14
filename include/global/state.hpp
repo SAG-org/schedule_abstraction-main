@@ -781,6 +781,29 @@ namespace NP {
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
 			}
 
+			Schedule_node(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
+				: lookup_key{ 0 }
+				, num_cpus(proc_initial_state.size())
+				, finish_time{ 0, 0 }
+				, a_max{ Time_model::constants<Time>::infinity() }
+				, num_jobs_scheduled(0)
+				, earliest_pending_release{ state_space_data.get_earliest_job_arrival() }
+				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
+				, next_certain_sequential_source_job_release{ state_space_data.get_earliest_certain_seq_source_job_release() }
+				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
+			{
+				Time a_min = Time_model::constants<Time>::infinity();
+				for (const auto& a : proc_initial_state) {
+					a_max = std::min(a_max, a.max());
+					a_min = std::min(a_min, a.min());
+				}
+				finish_time.extend_to(a_max);
+				finish_time.lower_bound(a_min);
+				
+				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
+			}
+			
+
 			// transition: new node by scheduling a job 'j' in an existing node 'from'
 			Schedule_node(
 				const Schedule_node& from,
@@ -805,6 +828,30 @@ namespace NP {
 			{
 				update_ready_successors(from, idx, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, this->scheduled_jobs);
 				update_jobs_with_pending_succ(from, idx, state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, this->scheduled_jobs);
+			}
+
+			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
+			{
+				lookup_key = 0;
+				num_cpus = proc_initial_state.size();
+				finish_time = { 0,0 };
+				a_max = Time_model::constants<Time>::infinity();
+				Time a_min = Time_model::constants<Time>::infinity();
+				for (const auto& a : proc_initial_state) {
+					a_max = std::min(a_max, a.max());
+					a_min = std::min(a_min, a.min());
+				}
+				finish_time.extend_to(a_max);
+				finish_time.lower_bound(a_min);
+
+				scheduled_jobs.clear();
+				num_jobs_scheduled = 0;
+				states.clear();
+				earliest_pending_release = state_space_data.get_earliest_job_arrival();
+				next_certain_successor_jobs_disptach = Time_model::constants<Time>::infinity();
+				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
+				next_certain_gang_source_job_disptach = Time_model::constants<Time>::infinity();
+				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
 			}
 
 			void reset(unsigned int num_cores, const State_space_data<Time>& state_space_data)

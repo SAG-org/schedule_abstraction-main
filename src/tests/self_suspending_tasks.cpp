@@ -205,7 +205,7 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (sn_susp)") {
 	auto uspace = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK(uspace->is_schedulable());
 
-	prob.num_processors = 1;
+	//prob.num_processors = 1;
 	opts.be_naive = false;
 
 	auto gspace = NP::Global::State_space<dtime_t>::explore(prob, opts);
@@ -231,7 +231,7 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	auto uspace = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK(uspace->is_schedulable());
 
-	prob.num_processors = 1;
+	//prob.num_processors = 1;
 	opts.be_naive = false;
 
 	auto gspace = NP::Global::State_space<dtime_t>::explore(prob, opts); 

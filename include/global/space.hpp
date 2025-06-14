@@ -392,10 +392,9 @@ namespace NP {
 				update_finish_times(r, j, range);
 			}
 
-			void make_initial_node(unsigned num_cores)
-			{
+			void make_initial_node() {
 				// construct initial state
-				Node& n = new_node(0, num_cores, state_space_data);
+				Node& n = new_node(0, cores_initial_state, state_space_data);
 				State& s = new_state(cores_initial_state, state_space_data);
 				n.add_state(&s);
 #ifdef CONFIG_PARALLEL
@@ -941,7 +940,7 @@ namespace NP {
 				}
 
 				int last_num_states = 0;
-				make_initial_node(num_cpus);
+				make_initial_node();
 #ifdef CONFIG_PARALLEL
 				tbb::task_group tg;
 #endif

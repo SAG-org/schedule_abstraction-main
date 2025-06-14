@@ -24,16 +24,14 @@ namespace NP {
 		Abort_actions aborts;
 
 		// ** Platform model:
-		// on how many (identical) processors are the jobs being
-		// dispatched (globally, in priority order)
-		unsigned int num_processors;
+		// initial state (availability intervals) of the identical processors 
+		// on which the jobs are being dispatched (globally, in priority order)
 		std::vector<Interval<Time>> processors_initial_state;
 
 		// Classic default setup: no abort actions
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 		                   unsigned int num_processors = 1)
-		: num_processors(num_processors)
-		, jobs(jobs)
+		: jobs(jobs)
 		, prec(prec)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
 		{
@@ -43,22 +41,19 @@ namespace NP {
 
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 			const std::vector<Interval<Time>>& proc_init_state)
-		: num_processors(proc_init_state.size())
-		, jobs(jobs)
+		: jobs(jobs)
 		, prec(prec)
 		, processors_initial_state(proc_init_state)
 		{
-			assert(num_processors > 0);
+			assert(processors_initial_state.size() > 0);
 			validate_prec_cstrnts<Time>(this->prec, jobs);
-			assert(processors_initial_state.size() == num_processors);
 		}
 
 		// Constructor with abort actions and precedence constraints
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 		                   const Abort_actions& aborts,
 		                   unsigned int num_processors)
-		: num_processors(num_processors)
-		, jobs(jobs)
+		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
@@ -71,23 +66,20 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 			const Abort_actions& aborts,
 			const std::vector<Interval<Time>>& proc_init_state)
-			: num_processors(proc_init_state.size())
-			, jobs(jobs)
+			: jobs(jobs)
 			, prec(prec)
 			, aborts(aborts)
 			, processors_initial_state(proc_init_state)
 		{
-			assert(num_processors > 0);
+			assert(processors_initial_state.size() > 0);
 			validate_prec_cstrnts<Time>(this->prec, jobs);
 			validate_abort_refs<Time>(aborts, jobs);
-			assert(processors_initial_state.size() == num_processors);
 		}
 
 		// Convenience constructor: no DAG, no abort actions
 		Scheduling_problem(const Workload& jobs,
 		                   unsigned int num_processors = 1)
 		: jobs(jobs)
-		, num_processors(num_processors)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
 		{
 			assert(num_processors > 0);
@@ -96,11 +88,9 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs,
 			const std::vector<Interval<Time>>& proc_init_state)
 			: jobs(jobs)
-			, num_processors(proc_init_state.size())
 			, processors_initial_state(proc_init_state)
 		{
-			assert(num_processors > 0);
-			assert(processors_initial_state.size() == num_processors);
+			assert(processors_initial_state.size() > 0);
 		}
 	};
 

@@ -137,7 +137,7 @@ TEST_CASE("[global] Find all next jobs") {
 	NP::Scheduling_problem<dtime_t> prob{jobs};
 	NP::Analysis_options opts;
 
-	prob.num_processors = 1;
+	//prob.num_processors = 1;
 
 	SUBCASE("Naive exploration") {
 		auto space = NP::Global::State_space<dtime_t>::explore_naively(jobs, 1);
