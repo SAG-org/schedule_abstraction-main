@@ -78,7 +78,10 @@ static Analysis_result analyze(
 	std::istream &prec_in,
 	std::istream &aborts_in,
 	std::istream &platform_in,
-    bool &is_yaml)
+	bool in_is_yaml,
+	bool dag_is_yaml,
+	bool aborts_is_yaml,
+	bool plat_is_yaml)
 {
 #ifdef CONFIG_PARALLEL
 	oneapi::tbb::task_arena arena(num_worker_threads ? num_worker_threads : oneapi::tbb::info::default_concurrency());
@@ -86,16 +89,20 @@ static Analysis_result analyze(
 
 
 	// Parse input files and create NP scheduling problem description
-    typename NP::Job<Time>::Job_set jobs = is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
+    typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
+	
 	// Parse precedence constraints
-	std::vector<NP::Precedence_constraint<Time>> edges = is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in) : NP::parse_precedence_file<Time>(prec_in);
+	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in) : NP::parse_precedence_file<Time>(prec_in);
 
 	// Parse platform specification if provided
 	std::vector<Interval<Time>> platform_spec;
 	if (platform_defined) {
-		platform_spec = is_yaml ? NP::parse_platform_spec_yaml<Time>(platform_in) : NP::parse_platform_spec_csv<Time>(platform_in);
+		platform_spec = plat_is_yaml ? NP::parse_platform_spec_yaml<Time>(platform_in) : NP::parse_platform_spec_csv<Time>(platform_in);
 		// Update num_processors based on platform specification
 		num_processors = platform_spec.size();
+	} 
+	else {
+		platform_spec.resize(num_processors, { 0,0 });
 	}
 
 	NP::Scheduling_problem<Time> problem{
@@ -180,16 +187,19 @@ static Analysis_result process_stream(
 	std::istream &prec_in,
 	std::istream &aborts_in,
 	std::istream &platform_in,
-    bool is_yaml)
+	bool in_is_yaml = false, 
+	bool dag_is_yaml = false, 
+	bool aborts_is_yaml = false, 
+	bool plat_is_yaml = false)
 {
 	if (want_multiprocessor && want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else if (want_multiprocessor && !want_dense)
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else if (want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 }
 
 static void process_file(const std::string& fname)
@@ -204,14 +214,50 @@ static void process_file(const std::string& fname)
 		auto aborts_stream = std::ifstream();
 		auto platform_stream = std::ifstream();
 
-		if (want_precedence)
+		bool in_is_yaml = false, dag_is_yaml = false, aborts_is_yaml = false, plat_is_yaml = false;
+		
+		// check the extension of the job input file
+		if (fname != "-") {
+			std::string ext = fname.substr(fname.find_last_of(".") + 1);
+			if (ext == "yaml" || ext == "yml") {
+				in_is_yaml = true;
+			}
+		}
+
+		if (in_is_yaml && want_precedence) {
+			std::cerr << "Error: conflict between job input file and precedence constraints file. Job input file in YAML formal already contains precedence constraints specification." << std::endl;
+			exit(1);
+		}
+		
+		if (want_precedence) {
 			dag_stream.open(precedence_file);
+		} 
+		else if (in_is_yaml) {
+			// if precedence file is not given, but input file is in YAML, we assume that the precedence constraints are in the input file
+			dag_stream.open(fname);
+			want_precedence = true;
+			dag_is_yaml = true;
+		} 
 
-		if (want_aborts)
+		if (want_aborts) {
 			aborts_stream.open(aborts_file);
+			//check the extension of the file
+			std::string ext = aborts_file.substr(aborts_file.find_last_of(".") + 1);
+			if (ext == "yaml" || ext == "yml") {
+				aborts_is_yaml = true;
+				std::cerr << "Error: YAML abort file is not supported yet, use CSV format instead." << std::endl;
+				exit(1);
+			}
+		}
 
-		if (platform_defined)
+		if (platform_defined) {
 			platform_stream.open(platform_file);
+			//check the extension of the file
+			std::string ext = platform_file.substr(platform_file.find_last_of(".") + 1);
+			if (ext == "yaml" || ext == "yml") {
+				plat_is_yaml = true;
+			}
+		}
 
 		std::istream &dag_in = want_precedence ?
 			static_cast<std::istream&>(dag_stream) :
@@ -227,18 +273,11 @@ static void process_file(const std::string& fname)
 
 		if (fname == "-")
 		{
-			result = process_stream(std::cin, dag_in, aborts_in, platform_in, false);
+			result = process_stream(std::cin, dag_in, aborts_in, platform_in);
 		}
 		else {
-            // check the extension of the file
-            std::string ext = fname.substr(fname.find_last_of(".") + 1);
-            bool is_yaml = false;
-            if (ext == "yaml" || ext == "yml") {
-                is_yaml = true;
-            }
-
-			auto in = std::ifstream(fname, std::ios::in);
-			result = process_stream(in, dag_in, aborts_in, platform_in, is_yaml);
+            auto in = std::ifstream(fname, std::ios::in);
+			result = process_stream(in, dag_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			if (want_dot_graph) {
@@ -255,7 +294,7 @@ static void process_file(const std::string& fname)
 #endif
 			if (want_rta_file) {
 				std::string rta_name = fname;
-				auto p = is_yaml ? rta_name.find(".yaml") : rta_name.find(".csv");
+				auto p = rta_name.find_last_of(".");
 				if (p != std::string::npos) {
 					rta_name.replace(p, std::string::npos, ".rta.csv");
 					auto out  = std::ofstream(rta_name,  std::ios::out);
@@ -266,7 +305,7 @@ static void process_file(const std::string& fname)
 
 			if (want_width_file) {
 				std::string width_file_name = fname;
-				auto p = is_yaml ? width_file_name.find(".yaml") : width_file_name.find(".csv");
+				auto p = width_file_name.find_last_of(".");
 				if (p != std::string::npos) {
 					width_file_name.replace(p, std::string::npos, ".width.csv");
 					auto out = std::ofstream(width_file_name, std::ios::out);

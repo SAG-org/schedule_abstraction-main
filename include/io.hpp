@@ -267,6 +267,7 @@ namespace NP {
 	{
 		typename Job<Time>::Job_set jobs;
         unsigned long tid, jid;
+		std::size_t idx = 0;
         Time arr_min, arr_max, cost_min, cost_max, dl, prio;
 		try {
 			YAML::Node input_job_set = YAML::Load(in);
@@ -283,7 +284,8 @@ namespace NP {
 				prio = j["Priority"].as<Time>();
 
 				jobs.push_back(Job<Time>{jid, Interval<Time>{arr_min, arr_max},
-										 Interval<Time>{cost_min, cost_max}, dl, prio, tid});
+										 Interval<Time>{cost_min, cost_max}, dl, prio, idx, tid});
+				idx++;
 			}
 		} catch (const YAML::Exception& e) {
 			std::cerr << "Error reading YAML file: " << e.what() << std::endl;
