@@ -708,6 +708,8 @@ namespace NP {
 		{
 		private:
 
+			typedef Schedule_state<Time> State;
+			typedef std::shared_ptr<State> State_ref;
 			typedef typename std::vector<Interval<Time>> Core_availability;
 			typedef std::vector<std::pair<const Job<Time>*, Interval<Time>>> Susp_list;
 			typedef std::vector<Susp_list> Successors;
@@ -733,11 +735,9 @@ namespace NP {
 			// no accidental copies
 			Schedule_node(const Schedule_node& origin) = delete;
 
-			typedef Schedule_state<Time> State;
-
 			struct eft_compare
 			{
-				bool operator() (State* x, State* y) const
+				bool operator() (State_ref x, State_ref y) const
 				{
 					return x->earliest_finish_time() < y->earliest_finish_time();
 				}
@@ -745,8 +745,8 @@ namespace NP {
 
 #ifdef CONFIG_PARALLEL
 			tbb::mutex mtx;
-#endif
-			typedef typename std::multiset<State*, eft_compare> State_ref_queue;
+#endif			
+			typedef typename std::multiset<State_ref, eft_compare> State_ref_queue;
 			State_ref_queue states;
 
 		public:
@@ -832,6 +832,11 @@ namespace NP {
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 			{
+				/*for (auto s = states->begin(); s != states->end(); s++) {
+					release_state((std::shared_ptr<State>) s);
+				}*/
+				states.clear();
+
 				lookup_key = 0;
 				num_cpus = proc_initial_state.size();
 				finish_time = { 0,0 };
@@ -846,7 +851,6 @@ namespace NP {
 
 				scheduled_jobs.clear();
 				num_jobs_scheduled = 0;
-				states.clear();
 				earliest_pending_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_disptach = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
@@ -856,13 +860,17 @@ namespace NP {
 
 			void reset(unsigned int num_cores, const State_space_data<Time>& state_space_data)
 			{
+				/*for (auto s = states->begin(); s != states->end(); s++) {
+					release_state((std::shared_ptr<State>) s);
+				}*/
+				states.clear();
+
 				lookup_key = 0;
 				num_cpus = num_cores;
 				finish_time = { 0,0 };
 				a_max = 0;
 				scheduled_jobs.clear();
 				num_jobs_scheduled = 0;
-				states.clear();
 				earliest_pending_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_disptach = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
@@ -881,6 +889,9 @@ namespace NP {
 				const Time next_certain_sequential_source_job_release // the next time a job without predecessor that can execute on a single core is certainly released
 			)
 			{
+				/*for (auto s = states->begin(); s != states->end(); s++) {
+					release_state((std::shared_ptr<State>) s);
+				}*/
 				states.clear();
 				scheduled_jobs.set(from.scheduled_jobs, idx);
 				lookup_key = from.next_key(j);
@@ -990,7 +1001,7 @@ namespace NP {
 			}
 
 
-			void add_state(State* s)
+			void add_state(State_ref s)
 			{
 #ifdef CONFIG_PARALLEL
 				tbb::mutex::scoped_lock lock(mtx);
@@ -1012,13 +1023,13 @@ namespace NP {
 				return states.size();
 			}
 
-			const State* get_first_state() const
+			const State_ref get_first_state() const
 			{
 				auto first = states.begin();
 				return *first;
 			}
 
-			const State* get_last_state() const
+			const State_ref get_last_state() const
 			{
 				auto last = --(states.end());
 				return *last;
@@ -1046,11 +1057,11 @@ namespace NP {
 				// if we do not use a conservative merge, try to merge with up to 'budget' states if possible.
 				int merge_budget = conservative ? 1 : budget;
 
-				State* last_state_merged;
+				State_ref last_state_merged;
 				bool result = false;
 				for ( auto it = states.begin(); it != states.end();)
 				{
-					State* state = *it;
+					State_ref state = *it;
 					if (result == false)
 					{
 						if (state->try_to_merge(s, conservative, use_job_finish_times))
@@ -1079,7 +1090,6 @@ namespace NP {
 						{
 							// the state was merged => we can thus remove the old one from the list of states
 							it = states.erase(it);
-							delete state;
 
 							// Try to merge with a few more states.
 							// std::cerr << "Merged with " << merge_budget << " of " << states.size() << " states left.\n";
@@ -1099,7 +1109,7 @@ namespace NP {
 			}
 
 		private:
-			void update_internal_variables(const State* s)
+			void update_internal_variables(const State_ref& s)
 			{
 				Interval<Time> ft = s->core_availability();
 				if (states.empty()) {
