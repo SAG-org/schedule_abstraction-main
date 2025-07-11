@@ -289,7 +289,7 @@ namespace NP {
 		private:
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			SAG_logger<Time> logger;
+			SAG_logger<Time> logger; // { { 0, Time_model::constants<Time>::infinity() }, { 0, 10000 }, { 7 }, {}, false };
 #endif
 			void count_edge()
 			{
@@ -765,7 +765,7 @@ namespace NP {
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 						if(log)
-							logger.log_job_dispatched(n, j, stimes, ftimes, p, next);
+							logger.log_job_dispatched(n, j, stimes, ftimes, p, next, current_job_count);
 #endif
 
 #ifndef CONFIG_PARALLEL

@@ -59,13 +59,65 @@ namespace NP {
 				}
 			};
 
+			std::deque<Edge> edges;
+
+			// the logger stores the state transitions based on the following conditions
+			// - the monitored_interval interval in which the job is dispatched
+			Interval<Time> monitored_interval;
+			// - the monitored_depth of the SAG (how many monitored_jobs have been dispatched so far)
+			Interval<unsigned long> monitored_depth;
+			// - the task dispatched
+			std::set<unsigned long> monitored_tasks;
+			// - the job dispatched
+			std::set<Job_index> monitored_jobs;
+			// - the set of monitored_jobs that have been dispatched so far
+			//std::set<Job_index> dispatched;
+			// - the set of monitored_jobs that have not been dispatched so far
+			//std::set<Job_index> not_dispatched;
+			// - whether the job misses its deadline or not
+			bool deadline_miss;
+			bool always_log = false;
+
 		public:
+			// default constructor (monitors everything)
+			SAG_logger()
+				: monitored_interval(0, Time_model::constants<Time>::infinity())
+				, monitored_depth(0, 0-1)
+				, deadline_miss(false)
+				, always_log(true)
+			{
+			}
+
+			SAG_logger(Interval<Time> t, Interval<unsigned long> depth, std::set<unsigned long> tasks, 
+				std::set<Job_index> jobs, 
+				//std::set<Job_index> dispatched, std::set<Job_index> not_dispatched, 
+				bool deadline_miss)
+			: monitored_interval(t)
+			, monitored_depth(depth)
+			, monitored_tasks(tasks)
+			, monitored_jobs(jobs)
+			//, dispatched(dispatched)
+			//, not_dispatched(not_dispatched)
+			, deadline_miss(deadline_miss)
+			{
+				// check if we should log everything
+				if(deadline_miss==false && monitored_depth.min() == 0 && monitored_depth.max() == 0-1 
+					&& monitored_interval.min() == 0 && monitored_interval.max() == Time_model::constants<Time>::infinity()
+					&& monitored_tasks.empty() && monitored_jobs.empty())
+				
+				{
+					always_log = true;
+				}
+			}
+
 			// save the dispatch of job j between old_node and new_node
 			void log_job_dispatched(const Node_ptr& old_node, const Job<Time>& dispatched_j,
 				const Interval<Time>& start, Interval<Time> finish, unsigned int parallelism,
-				const Node_ptr& new_node) {
-				// create an edge and add it to the edge queue
-				edges.emplace_back(&dispatched_j, old_node, new_node, finish, parallelism);
+				const Node_ptr& new_node, unsigned long depth) {
+				if (always_log || must_log(dispatched_j, start, dispatched_j.exceeds_deadline(finish.upto()), depth)) {
+					// create an edge and add it to the edge queue
+					edges.emplace_back(&dispatched_j, old_node, new_node, finish, parallelism);
+				}
 			}
 
 			void print_dot_file(std::ostream& out,
@@ -94,6 +146,16 @@ namespace NP {
 			}
 
 		private:
+			bool must_log(const Job<Time>& dispatched_j, const Interval<Time>& start, 
+				bool deadline_missed, unsigned long d) const
+			{
+				return (!deadline_miss || (deadline_miss && deadline_missed))
+					&& (d >= monitored_depth.min() && d <= monitored_depth.max())
+					&& (start.max() >= monitored_interval.min() && start.min() <= monitored_interval.max())
+					&& (monitored_jobs.empty() || monitored_jobs.find(dispatched_j.get_job_index()) != monitored_jobs.end())
+					&& (monitored_tasks.empty() || monitored_tasks.find(dispatched_j.get_task_id()) != monitored_tasks.end());
+			}
+
 			void print_vertex(std::ostream& out, int id, const Node_ptr& n,
 				const typename Job<Time>::Job_set& jobs) const
 			{
@@ -146,8 +208,6 @@ namespace NP {
 						<< std::endl;
 				}
 			}
-
-			std::deque<Edge> edges;
 		};
 	}
 }
