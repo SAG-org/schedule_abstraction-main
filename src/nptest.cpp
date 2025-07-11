@@ -44,9 +44,6 @@ static unsigned int num_processors = 1;
 static bool platform_defined = false;
 static std::string platform_file;
 
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-static bool want_dot_graph;
-#endif
 static double timeout;
 static long mem_max = 0; // in KiB
 static unsigned int max_depth = 0;
@@ -66,7 +63,6 @@ struct Analysis_result {
 	bool out_of_memory;
 	unsigned long long number_of_nodes, number_of_states, number_of_edges, max_width, number_of_jobs;
 	double cpu_time;
-	std::string graph;
 	std::string response_times_csv;
 	std::string width_evolution_csv;
 };
@@ -127,12 +123,6 @@ static Analysis_result analyze(
 	auto space = Space::explore(problem, opts);
 
 	// Extract the analysis results
-	auto graph = std::ostringstream();
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	if (want_dot_graph)
-		graph << *space;
-#endif
-
 	auto rta = std::ostringstream();
 
 	if (want_rta_file) {
@@ -174,7 +164,6 @@ static Analysis_result analyze(
 		space->max_exploration_front_width(),
 		(unsigned long)(problem.jobs.size()),
 		space->get_cpu_time(),
-		graph.str(),
 		rta.str(),
 		width_stream.str()
 	};
@@ -279,19 +268,6 @@ static void process_file(const std::string& fname)
             auto in = std::ifstream(fname, std::ios::in);
 			result = process_stream(in, dag_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
 
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			if (want_dot_graph) {
-				DM("\nDot graph being made\n");
-				std::string dot_name = fname;
-				auto p = is_yaml ? dot_name.find(".yaml") : dot_name.find(".csv");
-				if (p != std::string::npos) {
-					dot_name.replace(p, std::string::npos, ".dot");
-					auto out  = std::ofstream(dot_name,  std::ios::out);
-					out << result.graph;
-					out.close();
-				}
-			}
-#endif
 			if (want_rta_file) {
 				std::string rta_name = fname;
 				auto p = rta_name.find_last_of(".");
@@ -444,10 +420,6 @@ int main(int argc, char** argv)
 	      .action("store_const").set_const("1")
 	      .set_default("0");
 
-	parser.add_option("-g", "--save-graph").dest("dot").set_default("0")
-	      .action("store_const").set_const("1")
-	      .help("store the state graph in Graphviz dot format (default: off)");
-
 	parser.add_option("--verbose").dest("verbose").set_default("0")
 		.action("store_const").set_const("1")
 		.help("show the current status of the analysis (default: off)");
@@ -562,18 +534,6 @@ int main(int argc, char** argv)
 	want_verbose = options.get("verbose");
 
 	continue_after_dl_miss = options.get("go_on_after_dl");
-
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	want_dot_graph = options.get("dot");
-	DM("Dot graph"<<want_dot_graph<<std::endl);
-#else
-	if (options.is_set_by_user("dot")) {
-		std::cerr << "Error: graph collection support must be enabled "
-		          << "during compilation (CONFIG_COLLECT_SCHEDULE_GRAPH "
-		          << "is not set)." << std::endl;
-		return 2;
-	}
-#endif
 
 #ifdef CONFIG_PARALLEL
 	num_worker_threads = options.get("num_threads");

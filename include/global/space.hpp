@@ -156,68 +156,6 @@ namespace NP {
 #endif
 			typedef std::vector< Nodes > Nodes_storage;
 
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-
-			struct Edge {
-				const Job<Time>* scheduled;
-				const Node* source;
-				const Node* target;
-				const Interval<Time> finish_range;
-				const unsigned int parallelism;
-
-				Edge(const Job<Time>* s, const Node* src, const Node* tgt,
-					const Interval<Time>& fr, unsigned int parallelism = 1)
-					: scheduled(s)
-					, source(src)
-					, target(tgt)
-					, finish_range(fr)
-					, parallelism(parallelism)
-				{
-				}
-
-				bool deadline_miss_possible() const
-				{
-					return scheduled->exceeds_deadline(finish_range.upto());
-				}
-
-				Time earliest_finish_time() const
-				{
-					return finish_range.from();
-				}
-
-				Time latest_finish_time() const
-				{
-					return finish_range.upto();
-				}
-
-				Time earliest_start_time() const
-				{
-					return finish_range.from() - scheduled->least_exec_time();
-				}
-
-				Time latest_start_time() const
-				{
-					return finish_range.upto() - scheduled->maximal_exec_time();
-				}
-
-				unsigned int parallelism_level() const
-				{
-					return parallelism;
-				}
-			};
-
-			const std::deque<Edge>& get_edges() const
-			{
-				return edges;
-			}
-
-			const Nodes_storage& get_nodes() const
-			{
-				return nodes_storage;
-			}
-
-
-#endif
 		private:
 
 			typedef Node* Node_ref;
@@ -248,9 +186,6 @@ namespace NP {
 			};
 			typedef std::vector<Response_time_item> Response_times;
 
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			std::deque<Edge> edges;
-#endif
 			// Similar to uni/space.hpp, make rta a 
 
 			Response_times rta;
@@ -334,11 +269,7 @@ namespace NP {
 				, num_cpus(cores_initial_state.size())
 				, cores_initial_state(cores_initial_state)
 				, early_exit(early_exit)
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-				, nodes_storage(jobs.size() + 1)
-#else
 				, nodes_storage(2)
-#endif
 #ifdef CONFIG_PARALLEL
 				, partial_rta(jobs.size())
 #endif
@@ -619,9 +550,6 @@ namespace NP {
 
 								// update response times
 								update_finish_times(j, frange);
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-								edges.emplace_back(&j, &new_n, &next, frange, pmin);
-#endif
 								count_edge();
 							}
 							break;
@@ -829,9 +757,6 @@ namespace NP {
 						}
 #endif
 
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-						edges.emplace_back(&j, &n, next, ftimes);
-#endif
 						count_edge();
 					}
 				}
@@ -1064,74 +989,10 @@ namespace NP {
 					num_states += c;
 #endif
 			}
+		};
 
-
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			friend std::ostream& operator<< (std::ostream& out,
-				const State_space<Time>& space)
-			{
-				std::map<const Schedule_node<Time>*, unsigned int> node_id;
-				unsigned int i = 0;
-				out << "digraph {" << std::endl;
-				for (const auto& front : space.get_nodes()) {
-					for (auto n : front) {
-						node_id[n] = i++;
-						out << "\tN" << node_id[n]
-							<< "[label=\"N" << node_id[n] << ": {";
-						const auto* n_states = n->get_states();
-
-						for (State* s : *n_states)
-						{
-							out << "[";
-							s->print_vertex_label(out, space.state_space_data.jobs);
-							out << "]\\n";
-						}
-						out << "}"
-							<< "\\nER=";
-						if (n->earliest_job_release() ==
-							Time_model::constants<Time>::infinity()) {
-							out << "N/A";
-						}
-						else {
-							out << n->earliest_job_release();
-						}
-						out << "\"];"
-							<< std::endl;
-					}
-				}
-				for (const auto& e : space.get_edges()) {
-					out << "\tN" << node_id[e.source]
-						<< " -> "
-						<< "N" << node_id[e.target]
-						<< "[label=\""
-						<< "T" << e.scheduled->get_task_id()
-						<< " J" << e.scheduled->get_job_id()
-						<< "\\nDL=" << e.scheduled->get_deadline()
-						<< "\\nES=" << e.earliest_start_time()
-						<< "\\nLS=" << e.latest_start_time()
-						<< "\\nEF=" << e.earliest_finish_time()
-						<< "\\nLF=" << e.latest_finish_time()
-						<< "\"";
-					if (e.deadline_miss_possible()) {
-						out << ",color=Red,fontcolor=Red";
-					}
-					out << ",fontsize=8" << "]"
-						<< ";"
-						<< std::endl;
-					if (e.deadline_miss_possible()) {
-						out << "N" << node_id[e.target]
-							<< "[color=Red];"
-							<< std::endl;
-					}
-				}
-				out << "}" << std::endl;
-				return out;
-					}
-#endif
-				};
-
-			}
-		}
+	}
+}
 
 namespace std
 {
