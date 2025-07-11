@@ -1002,7 +1002,8 @@ namespace NP {
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 		public:
 			void print_dot_file(std::ostream& o) {
-				logger.print_dot_file(o, state_space_data.jobs);
+				Dot_file_config config;
+				logger.print_dot_file(o, state_space_data.jobs, config);
 			}
 #endif
 		};

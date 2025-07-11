@@ -214,6 +214,11 @@ namespace NP {
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
+			const Core_availability& get_cores_availability() const
+			{
+				return core_avail;
+			}
+
 			Interval<Time> core_availability(unsigned long p = 1) const
 			{
 				assert(core_avail.size() > 0);
@@ -249,6 +254,11 @@ namespace NP {
 			Time next_certain_successor_jobs_disptach() const
 			{
 				return earliest_certain_successor_job_disptach;
+			}
+
+			const std::vector<Running_job>& get_cert_running_jobs() const
+			{
+				return certain_jobs;
 			}
 
 			// returns true if the availability inervals of one state overlaps with the other state.
@@ -386,25 +396,6 @@ namespace NP {
 				stream << ") " << ")";
 				stream << " @ " << &s;
 				return stream;
-			}
-
-			void print_vertex_label(std::ostream& out,
-				const typename Job<Time>::Job_set& jobs) const
-			{
-				for (const auto& a : core_avail)
-					out << "[" << a.from() << ", " << a.until() << "] ";
-				out << "\\n";
-				bool first = true;
-				out << "{";
-				for (const auto& rj : certain_jobs) {
-					if (!first)
-						out << ", ";
-					out << "T" << jobs[rj.idx].get_task_id()
-						<< "J" << jobs[rj.idx].get_job_id() << ":"
-						<< rj.finish_time.min() << "-" << rj.finish_time.max();
-					first = false;
-				}
-				out << "}";
 			}
 
 		private:
