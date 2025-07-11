@@ -2,8 +2,13 @@
 #define LOGGER_HPP
 
 #include "global\state.hpp"
+
 #include <deque>
 #include <memory>
+#include <set>
+#include <map>
+#include <limits>
+#include <iostream>
 
 namespace NP {
 	namespace Global {
@@ -27,6 +32,8 @@ namespace NP {
 		
 		template <typename Time>
 		class Logging_condition {
+			typedef std::shared_ptr<Schedule_node<Time>> Node_ptr;
+
 			// the logger stores the state transitions based on the following conditions
 			// - the monitored_interval interval in which the job is dispatched
 			Interval<Time> monitored_interval;
@@ -37,9 +44,9 @@ namespace NP {
 			// - the job dispatched
 			std::set<Job_index> monitored_jobs;
 			// - the set of monitored_jobs that have been dispatched so far
-			//std::set<Job_index> dispatched;
+			std::set<Job_index> must_be_dispatched;
 			// - the set of monitored_jobs that have not been dispatched so far
-			//std::set<Job_index> not_dispatched;
+			std::set<Job_index> must_not_be_dispatched;
 			// - whether the job misses its deadline or not
 			bool deadline_miss;
 			bool always_log = false;
@@ -58,12 +65,12 @@ namespace NP {
 				, monitored_depth(depth)
 				, monitored_tasks(tasks)
 				, monitored_jobs(jobs)
-				, dispatched(dispatched)
-				, not_dispatched(not_dispatched)
+				, must_be_dispatched(dispatched)
+				, must_not_be_dispatched(not_dispatched)
 				, deadline_miss(deadline_miss)
 			{
 				// check if we should log everything
-				if (deadline_miss == false && monitored_depth.min() == 0 && monitored_depth.max() == 0 - 1
+				if (deadline_miss == false && monitored_depth.min() == 0 && monitored_depth.max() == std::numeric_limits<unsigned long>::max()
 					&& monitored_interval.min() == 0 && monitored_interval.max() == Time_model::constants<Time>::infinity()
 					&& monitored_tasks.empty() && monitored_jobs.empty() && dispatched.is_empty() && not_dispatched.is_empty())
 
@@ -73,17 +80,32 @@ namespace NP {
 			}
 
 			// check if the logging condition is true for the given job, start time and depth
-			bool is_true(const Job<Time>& dispatched_j, const Interval<Time>& start,
+			bool is_true(const Node_ptr& n, const Job<Time>& dispatched_j, const Interval<Time>& start,
 				bool deadline_missed, unsigned long depth) const
 			{
-				return always_log ||
-					( 
-					  (!deadline_miss || (deadline_miss && deadline_missed))
-					  && (depth >= monitored_depth.min() && depth <= monitored_depth.max())
-					  && (start.max() >= monitored_interval.min() && start.min() <= monitored_interval.max())
-					  && (monitored_jobs.empty() || monitored_jobs.find(dispatched_j.get_job_index()) != monitored_jobs.end())
-					  && (monitored_tasks.empty() || monitored_tasks.find(dispatched_j.get_task_id()) != monitored_tasks.end()) 
-					);
+				if (always_log) {
+					return true;
+				}
+
+				// check if all jobs in dispatched have been dispatched
+				for (Job_index j : must_be_dispatched) {
+					if (n->job_not_dispatched(j)) {
+						return false;
+					}
+				}
+
+				// check if all jobs in not_dispatched have not been dispatched
+				for (Job_index j : must_not_be_dispatched) {
+					if (n->job_dispatched(j)) {
+						return false;
+					}
+				}
+
+				return (!deadline_miss || (deadline_miss && deadline_missed))
+					&& (depth >= monitored_depth.min() && depth <= monitored_depth.max())
+					&& (start.max() >= monitored_interval.min() && start.min() <= monitored_interval.max())
+					&& (monitored_jobs.empty() || monitored_jobs.find(dispatched_j.get_job_index()) != monitored_jobs.end())
+					&& (monitored_tasks.empty() || monitored_tasks.find(dispatched_j.get_task_id()) != monitored_tasks.end());
 			}
 		};
 
@@ -158,7 +180,7 @@ namespace NP {
 			void log_job_dispatched(const Node_ptr& old_node, const Job<Time>& dispatched_j,
 				const Interval<Time>& start, Interval<Time> finish, unsigned int parallelism,
 				const Node_ptr& new_node, unsigned long depth) {
-				if (condition.is_true(dispatched_j, start, dispatched_j.exceeds_deadline(finish.upto()), depth)) {
+				if (condition.is_true(new_node, dispatched_j, start, dispatched_j.exceeds_deadline(finish.upto()), depth)) {
 					// create an edge and add it to the edge queue
 					edges.emplace_back(&dispatched_j, old_node, new_node, finish, parallelism);
 				}
