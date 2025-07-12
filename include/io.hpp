@@ -10,6 +10,7 @@
 #include "precedence.hpp"
 #include "aborts.hpp"
 #include "yaml-cpp/yaml.h"
+#include "logger.hpp"
 
 namespace NP {
 
@@ -406,6 +407,153 @@ namespace NP {
 		}
 		return platform;
 	}
+
+	template<class Time>
+	Global::Logging_condition<Time> parse_log_config_yaml(std::istream& in, const typename Job<Time>::Job_set& jobset, Global::Dot_file_config& dot_config)
+	{		
+		// Default values for logging condition parameters
+		Interval<Time> time_interval(0, Time_model::constants<Time>::infinity());
+		Interval<unsigned long> depth_interval(0, std::numeric_limits<unsigned long>::max());
+		std::set<unsigned long> tasks;
+		std::set<Job_index> jobs;
+		std::set<Job_index> dispatched;
+		std::set<Job_index> not_dispatched;
+		bool deadline_miss = false;
+
+		try {
+			in.clear();
+			in.seekg(0, std::ios::beg);
+			YAML::Node config = YAML::Load(in);
+
+			// Parse Conditions section
+			if (config["Conditions"]) {
+				YAML::Node conditions = config["Conditions"];
+
+				// Parse Time interval
+				if (conditions["Time"]) {
+					YAML::Node time_node = conditions["Time"];
+					if (time_node.IsSequence() && time_node.size() == 2) {
+						Time time_min = (time_node[0].as<std::string>() == "-") ? 0 : time_node[0].as<Time>();
+						Time time_max = (time_node[1].as<std::string>() == "-") ? 
+							Time_model::constants<Time>::infinity() : time_node[1].as<Time>();
+						time_interval = Interval<Time>(time_min, time_max);
+					}
+					else
+						std::cerr << "Error reading log condition specification on time. This field is going to be ignored." << std::endl;
+				}
+
+				// Parse Depth interval
+				if (conditions["Depth"]) {
+					YAML::Node depth_node = conditions["Depth"];
+					if (depth_node.IsSequence() && depth_node.size() == 2) {
+						unsigned long depth_min = depth_node[0].as<unsigned long>();
+						unsigned long depth_max = depth_node[1].as<unsigned long>();
+						depth_interval = Interval<unsigned long>(depth_min, depth_max);
+					}
+					else
+						std::cerr << "Error reading log condition specification on depth. This field is going to be ignored." << std::endl;
+				}
+
+				// Parse Tasks
+				if (conditions["Tasks"]) {
+					for (const auto& task : conditions["Tasks"]) {
+						tasks.insert(task.as<unsigned long>());
+					}
+				}
+
+				// Parse Jobs
+				if (conditions["Jobs"]) {
+					for (const auto& job : conditions["Jobs"]) {
+						if (job.IsSequence() && job.size() == 2) {
+							unsigned long task_id = job[0].as<unsigned long>();
+							unsigned long job_id = job[1].as<unsigned long>();
+							JobID jid(job_id, task_id);
+							Job_index idx = std::distance(jobset.begin(), std::find_if(jobset.begin(), jobset.end(), [&task_id, &job_id](const Job<Time>& j) { return j.get_task_id() == task_id && j.get_job_id() == job_id; }));;
+							jobs.insert(idx);
+						}
+						else
+							std::cerr << "Error reading log condition specification on monitored jobs. This field is going to be ignored." << std::endl;
+					}
+				}
+
+				// Parse Dispatched
+				if (conditions["Dispatched"]) {
+					for (const auto& job : conditions["Dispatched"]) {
+						if (job.IsSequence() && job.size() == 2) {
+							unsigned long task_id = job[0].as<unsigned long>();
+							unsigned long job_id = job[1].as<unsigned long>();
+							Job_index idx = std::distance(jobset.begin(), std::find_if(jobset.begin(), jobset.end(), [&task_id, &job_id](const Job<Time>& j) { return j.get_task_id() == task_id && j.get_job_id() == job_id; }));;
+							dispatched.insert(idx);
+						}
+						else
+							std::cerr << "Error reading log condition specification on monitored dispatched jobs. This field is going to be ignored." << std::endl;
+					}
+				}
+
+				// Parse NotDispatched
+				if (conditions["NotDispatched"]) {
+					for (const auto& job : conditions["NotDispatched"]) {
+						if (job.IsSequence() && job.size() == 2) {
+							unsigned long task_id = job[0].as<unsigned long>();
+							unsigned long job_id = job[1].as<unsigned long>();
+							Job_index idx = std::distance(jobset.begin(), std::find_if(jobset.begin(), jobset.end(), [&task_id, &job_id](const Job<Time>& j) { return j.get_task_id() == task_id && j.get_job_id() == job_id; }));;
+							not_dispatched.insert(idx);
+						}
+						else
+							std::cerr << "Error reading log condition specification on monitored non-dispatched jobs. This field is going to be ignored." << std::endl;
+					}
+				}
+
+				// Parse DeadlineMiss
+				if (conditions["DeadlineMiss"]) {
+					deadline_miss = conditions["DeadlineMiss"].as<std::string>() == "yes";
+				}
+			}
+
+			// Parse LoggedInfo section
+			if (config["LoggedInfo"]) {
+				YAML::Node logged_info = config["LoggedInfo"];
+
+				if (logged_info["DispatchedJob"]) {
+					dot_config.print_dispatched_job = logged_info["DispatchedJob"].as<std::string>() == "yes";
+				}
+				if (logged_info["StartTime"]) {
+					dot_config.print_start_times = logged_info["StartTime"].as<std::string>() == "yes";
+				}
+				if (logged_info["FinishTime"]) {
+					dot_config.print_finish_times = logged_info["FinishTime"].as<std::string>() == "yes";
+				}
+				if (logged_info["JobParallelism"]) {
+					dot_config.print_parallelism = logged_info["JobParallelism"].as<std::string>() == "yes";
+				}
+				if (logged_info["CoresAvailability"]) {
+					dot_config.print_core_availability = logged_info["CoresAvailability"].as<std::string>() == "yes";
+				}
+				if (logged_info["CertRunningJobs"]) {
+					dot_config.print_certainly_running_jobs = logged_info["CertRunningJobs"].as<std::string>() == "yes";
+				}
+				if (logged_info["PredFinishTimes"]) {
+					dot_config.print_pred_finish_times = logged_info["PredFinishTimes"].as<std::string>() == "yes";
+				}
+				if (logged_info["ReadySuccessors"]) {
+					dot_config.print_ready_successors = logged_info["ReadySuccessors"].as<std::string>() == "yes";
+				}
+				if (logged_info["NodeKey"]) {
+					dot_config.print_node_key = logged_info["NodeKey"].as<std::string>() == "yes";
+				}
+			}
+
+		} catch (const YAML::Exception& e) {
+			std::cerr << "Error reading log configuration YAML file: " << e.what() << std::endl;
+		}
+
+		// Create logging condition with parsed parameters
+		Global::Logging_condition<Time> logging_condition(
+			time_interval, depth_interval, tasks, jobs, dispatched, not_dispatched, deadline_miss);
+
+		return logging_condition;
+	}
+
 }
 
 #endif

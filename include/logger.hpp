@@ -72,7 +72,7 @@ namespace NP {
 				// check if we should log everything
 				if (deadline_miss == false && monitored_depth.min() == 0 && monitored_depth.max() == std::numeric_limits<unsigned long>::max()
 					&& monitored_interval.min() == 0 && monitored_interval.max() == Time_model::constants<Time>::infinity()
-					&& monitored_tasks.empty() && monitored_jobs.empty() && dispatched.is_empty() && not_dispatched.is_empty())
+					&& monitored_tasks.empty() && monitored_jobs.empty() && dispatched.empty() && not_dispatched.empty())
 
 				{
 					always_log = true;
@@ -107,6 +107,13 @@ namespace NP {
 					&& (monitored_jobs.empty() || monitored_jobs.find(dispatched_j.get_job_index()) != monitored_jobs.end())
 					&& (monitored_tasks.empty() || monitored_tasks.find(dispatched_j.get_task_id()) != monitored_tasks.end());
 			}
+		};
+
+		template<class Time>
+		struct Log_options {
+			// Should we log the SAG?
+			bool log = false;
+			Logging_condition<Time> log_cond;
 		};
 
 		template <typename Time>

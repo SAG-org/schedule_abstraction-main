@@ -46,6 +46,7 @@ static std::string platform_file;
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 static bool want_dot_graph;
+static std::string dot_file;
 #endif
 static double timeout;
 static long mem_max = 0; // in KiB
@@ -76,10 +77,10 @@ struct Analysis_result {
 
 template<class Time, class Space>
 static Analysis_result analyze(
-	std::istream &in,
-	std::istream &prec_in,
-	std::istream &aborts_in,
-	std::istream &platform_in,
+	std::istream& in,
+	std::istream& prec_in,
+	std::istream& aborts_in,
+	std::istream& platform_in,
 	bool in_is_yaml,
 	bool dag_is_yaml,
 	bool aborts_is_yaml,
@@ -91,8 +92,8 @@ static Analysis_result analyze(
 
 
 	// Parse input files and create NP scheduling problem description
-    typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
-	
+	typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
+
 	// Parse precedence constraints
 	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in) : NP::parse_precedence_file<Time>(prec_in);
 
@@ -102,16 +103,16 @@ static Analysis_result analyze(
 		platform_spec = plat_is_yaml ? NP::parse_platform_spec_yaml<Time>(platform_in) : NP::parse_platform_spec_csv<Time>(platform_in);
 		// Update num_processors based on platform specification
 		num_processors = platform_spec.size();
-	} 
+	}
 	else {
 		platform_spec.resize(num_processors, { 0,0 });
 	}
 
 	NP::Scheduling_problem<Time> problem{
-        jobs,
+		jobs,
 		edges,
 		NP::parse_abort_file<Time>(aborts_in),
-		platform_spec};
+		platform_spec };
 
 	// Set common analysis options
 	NP::Analysis_options opts;
@@ -125,17 +126,26 @@ static Analysis_result analyze(
 	opts.merge_depth = merge_depth;
 	opts.merge_use_job_finish_times = merge_use_job_finish_times;
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	opts.log = want_dot_graph;
-#endif
-
+	NP::Global::Log_options<Time> log_opts;
+	log_opts.log = want_dot_graph;
+	NP::Global::Dot_file_config log_print_config;
+	if (not dot_file.empty()) {
+		auto dot_config_stream = std::ifstream();
+		dot_config_stream.open(dot_file);
+		log_opts.log_cond = NP::parse_log_config_yaml<Time>(dot_config_stream, jobs, log_print_config);
+	}
+	// Actually call the analysis engine
+	auto space = Space::explore(problem, opts, log_opts);
+#else
 	// Actually call the analysis engine
 	auto space = Space::explore(problem, opts);
+#endif
 
 	// Extract the analysis results
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 	auto graph = std::ostringstream();
 	if (want_dot_graph)
-		space->print_dot_file(graph);
+		space->print_dot_file(graph, log_print_config);
 #endif
 	auto rta = std::ostringstream();
 
@@ -465,9 +475,13 @@ int main(int argc, char** argv)
 	      .help("do not abort the analysis on the first deadline miss "
 	            "(default: off)");
 
-	parser.add_option("-g", "--save-graph").dest("dot").set_default("0")
+	parser.add_option("-g", "--save-graph").dest("want_dot").set_default("0")
 		.action("store_const").set_const("1")
-		.help("store the state graph in Graphviz dot format (default: off)");
+		.help("Records the state graph in Graphviz dot format (default: off).");
+
+	parser.add_option("--log_opts").dest("dot_file")
+		.help("If 'save-graph is set', allows to pass a YAML file configuring what part of the state graph is recorded and what is printed in the state graph. Default: complete state space is recorded and default info is printed.")
+		.set_default("");
 
 	auto options = parser.parse_args(argc, argv);
 	//all the options that could have been entered above are processed below and appropriate variables
@@ -570,10 +584,15 @@ int main(int argc, char** argv)
 	continue_after_dl_miss = options.get("go_on_after_dl");
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	want_dot_graph = options.get("dot");
-	DM("Dot graph" << want_dot_graph << std::endl);
+	want_dot_graph = options.is_set_by_user("want_dot");
+	if (want_dot_graph)
+		dot_file = (const std::string&)options.get("dot_file");
+	else if (options.is_set_by_user("dot_file")) {
+		std::cerr << "Warning: log options are set but log of state graph is not activated ('-g' or '--save-graph' not set). "
+			<< "The content of the file passed in argument with '--log_opts' will be ignored." << std::endl;
+	}
 #else
-	if (options.is_set_by_user("dot")) {
+	if (options.is_set_by_user("want_dot")) {
 		std::cerr << "Error: graph collection support must be enabled "
 			<< "during compilation (CONFIG_COLLECT_SCHEDULE_GRAPH "
 			<< "is not set)." << std::endl;

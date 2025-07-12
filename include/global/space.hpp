@@ -51,6 +51,26 @@ namespace NP {
 
 			typedef Schedule_node<Time> Node;
 
+#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
+			static State_space* explore(
+				const Problem& prob,
+				const Analysis_options& opts,
+				const Log_options<Time>& log_opts)
+			{
+				if (opts.verbose)
+					std::cout << "Starting" << std::endl;
+
+				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
+					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts);
+				s->be_naive = opts.be_naive;
+				if (opts.verbose)
+					std::cout << "Analysing" << std::endl;
+				s->cpu_time.start();
+				s->explore();
+				s->cpu_time.stop();
+				return s;
+			}
+#endif
 			static State_space* explore(
 				const Problem& prob,
 				const Analysis_options& opts)
@@ -59,7 +79,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, opts.log);
+					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose);
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -253,9 +273,11 @@ namespace NP {
 				long max_memory = 0,
 				unsigned int max_depth = 0,
 				bool early_exit = true,
-				bool verbose = false,
-				bool log = false)
-				: state_space_data(jobs, edges, aborts, num_cpus)
+				bool verbose = false
+#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
+				, Log_options<Time> log_opts = Log_options<Time>()
+#endif
+			)	: state_space_data(jobs, edges, aborts, num_cpus)
 				, aborted(false)
 				, timed_out(false)
 				, observed_deadline_miss(false)
@@ -278,7 +300,8 @@ namespace NP {
 				, early_exit(early_exit)
 				, nodes_storage(2)
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-				, log(log)
+				, log(log_opts.log)
+				, logger(log_opts.log_cond)
 #endif
 #ifdef CONFIG_PARALLEL
 				, partial_rta(jobs.size())
@@ -1001,8 +1024,7 @@ namespace NP {
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 		public:
-			void print_dot_file(std::ostream& o) {
-				Dot_file_config config;
+			void print_dot_file(std::ostream& o, Dot_file_config config) {
 				logger.print_dot_file(o, state_space_data.jobs, config);
 			}
 #endif
