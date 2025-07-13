@@ -4,19 +4,8 @@
 #include <algorithm>
 
 #include "mem.hpp"
-
 #include "OptionParser.h"
-
 #include "config.h"
-
-#ifdef CONFIG_PARALLEL
-
-#include <oneapi/tbb/info.h>
-#include <oneapi/tbb/parallel_for.h>
-#include <oneapi/tbb/task_arena.h>
-
-#endif
-
 #include "problem.hpp"
 #include "global/space.hpp"
 #include "io.hpp"
@@ -57,10 +46,6 @@ static bool want_width_file;
 
 static bool continue_after_dl_miss = false;
 
-#ifdef CONFIG_PARALLEL
-static unsigned int num_worker_threads = 0;
-#endif
-
 struct Analysis_result {
 	bool schedulable;
 	bool timeout;
@@ -86,11 +71,6 @@ static Analysis_result analyze(
 	bool aborts_is_yaml,
 	bool plat_is_yaml)
 {
-#ifdef CONFIG_PARALLEL
-	oneapi::tbb::task_arena arena(num_worker_threads ? num_worker_threads : oneapi::tbb::info::default_concurrency());
-#endif
-
-
 	// Parse input files and create NP scheduling problem description
 	typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
 
@@ -452,10 +432,6 @@ int main(int argc, char** argv)
 	      .help("name of the file that contains the platform specification (CSV or YAML)")
 	      .set_default("");
 
-	parser.add_option("--threads").dest("num_threads")
-	      .help("set the number of worker threads (parallel analysis)")
-	      .set_default("0");
-
 	parser.add_option("--header").dest("print_header")
 	      .help("print a column header")
 	      .action("store_const").set_const("1")
@@ -496,13 +472,6 @@ int main(int argc, char** argv)
 	}
 
 	std::string merge_opts = (const std::string&)options.get("merge_opts");
-#ifdef CONFIG_PARALLEL
-	if (merge_opts == "no") {
-		std::cerr << "Error: parallel analysis (CONFIG_PARALLEL=ON) is incompatible with naive exploration."
-			<< std::endl;
-		return 3;
-	}
-#endif
 	want_naive = (merge_opts == "no");
 	if (merge_opts == "c1") {
 		merge_conservative = true;
@@ -597,17 +566,6 @@ int main(int argc, char** argv)
 			<< "during compilation (CONFIG_COLLECT_SCHEDULE_GRAPH "
 			<< "is not set)." << std::endl;
 		return 2;
-	}
-#endif
-
-#ifdef CONFIG_PARALLEL
-	num_worker_threads = options.get("num_threads");
-#else
-	if (options.is_set_by_user("num_threads")) {
-		std::cerr << "Error: parallel analysis must be enabled "
-		          << "during compilation (CONFIG_PARALLEL "
-		          << "is not set)." << std::endl;
-		return 3;
 	}
 #endif
 

@@ -14,16 +14,6 @@
 #include <memory>
 
 #include "config.h"
-
-#ifdef CONFIG_PARALLEL
-#include "tbb/concurrent_hash_map.h"
-#include "tbb/enumerable_thread_specific.h"
-#include "tbb/parallel_for.h"
-#include <tbb/task.h>
-#include <tbb/concurrent_queue.h>
-#include <atomic>
-#endif
-
 #include "problem.hpp"
 #include "global/state_space_data.hpp"
 #include "clock.hpp"
@@ -173,25 +163,15 @@ namespace NP {
 			}
 
 			typedef std::shared_ptr<Node> Node_ref;
-#ifdef CONFIG_PARALLEL
-			typedef tbb::concurrent_queue<Node_ref> Nodes;
-#else
 			typedef std::deque<Node_ref> Nodes;
-#endif
-			typedef std::vector< Nodes > Nodes_storage;
+			typedef std::vector<Nodes> Nodes_storage;
 
 		private:
 
 			typedef typename std::forward_list<Node_ref> Node_refs;
 			typedef std::shared_ptr<State> State_ref;
 			typedef typename std::forward_list<State_ref> State_refs;
-
-#ifdef CONFIG_PARALLEL
-			typedef tbb::concurrent_hash_map<hash_value_t, Node_refs> Nodes_map;
-			typedef typename Nodes_map::accessor Nodes_map_accessor;
-#else
 			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
-#endif
 			typedef const Job<Time>* Job_ref;
 
 			// Similar to uni/space.hpp, make Response_times a vector of intervals.
@@ -213,9 +193,6 @@ namespace NP {
 
 			Response_times rta;
 
-#ifdef CONFIG_PARALLEL
-			tbb::enumerable_thread_specific<Response_times> partial_rta;
-#endif
 			bool verbose;
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			bool log = false; // whether to log the schedule graph
@@ -241,20 +218,11 @@ namespace NP {
 			Object_pool<Node> node_pool;
 			Object_pool<State> state_pool;
 
-#ifdef CONFIG_PARALLEL
-			std::atomic_ulong num_nodes, num_states, num_edges;
-#else
 			unsigned long num_nodes, num_states, num_edges;
-#endif
 			// updated only by main thread
 			unsigned long current_job_count, max_width;
 			std::vector<std::pair<unsigned long, unsigned long>> width;
 
-#ifdef CONFIG_PARALLEL
-			tbb::enumerable_thread_specific<unsigned long> edge_counter;
-			tbb::enumerable_thread_specific<unsigned long> nodes_counter;
-			tbb::enumerable_thread_specific<unsigned long> states_counter;
-#endif
 			Processor_clock cpu_time;
 			Memory_monitor mem_consumption;
 			const double timeout;
@@ -303,9 +271,6 @@ namespace NP {
 				, log(log_opts.log)
 				, logger(log_opts.log_cond)
 #endif
-#ifdef CONFIG_PARALLEL
-				, partial_rta(jobs.size())
-#endif
 			{
 			}
 
@@ -316,11 +281,7 @@ namespace NP {
 #endif
 			void count_edge()
 			{
-#ifdef CONFIG_PARALLEL
-				edge_counter.local()++;
-#else
 				num_edges++;
-#endif
 			}
 
 			void update_finish_times(Response_times& r, const Job_index id,
@@ -350,12 +311,7 @@ namespace NP {
 
 			void update_finish_times(const Job<Time>& j, Interval<Time> range)
 			{
-				Response_times& r =
-#ifdef CONFIG_PARALLEL
-					partial_rta.local();
-#else
-					rta;
-#endif
+				Response_times& r = rta;
 				update_finish_times(r, j, range);
 			}
 
@@ -364,11 +320,7 @@ namespace NP {
 				Node_ref n = new_node(0, cores_initial_state, state_space_data);
 				State_ref s = new_state(cores_initial_state, state_space_data);
 				n->add_state(s);
-#ifdef CONFIG_PARALLEL
-				states_counter.local()++;
-#else
 				num_states++;
-#endif
 			}
 
 			Nodes& nodes(const int depth = 0)
@@ -380,20 +332,7 @@ namespace NP {
 			Node_ref alloc_node(const int depth, Args&&... args)
 			{
 				Node_ref n = node_pool.acquire(std::forward<Args>(args)...);
-#ifdef CONFIG_PARALLEL
-				nodes(depth).push(n);
-#else
 				nodes(depth).push_back(n);
-#endif // CONFIG_PARALLEL
-
-				// make sure we didn't screw up...
-				auto njobs = n->number_of_scheduled_jobs();
-				/*assert(
-					(!njobs && num_states == 0) // initial state
-					|| (njobs == current_job_count + 1) // normal State
-					|| (njobs == current_job_count + 2 && aborted) // deadline miss
-				);*/
-
 				return n;
 			}
 
@@ -410,28 +349,17 @@ namespace NP {
 				// create a new state.
 				State_ref new_s = new_state(std::forward<Args>(args)...);
 				// try to merge the new state with existing states in node n.
-#ifndef CONFIG_PARALLEL
 				if (!(n.get_states()->empty())) {
-#endif
 					int n_states_merged = n.merge_states(*new_s, merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
 					if (n_states_merged > 0) {
 						release_state(new_s); // if we could merge no need to keep track of the new state anymore
-#ifdef CONFIG_PARALLEL
-						states_counter.local() -= (n_states_merged - 1);
-#else
 						num_states -= (n_states_merged - 1);
-#endif
 					}
 					else
 					{
 						n.add_state(new_s); // else add the new state to the node
-#ifdef CONFIG_PARALLEL
-						states_counter.local()++;
-#else
 						num_states++;
-#endif
 					}
-#ifndef CONFIG_PARALLEL
 				}
 				else
 				{
@@ -439,7 +367,6 @@ namespace NP {
 					num_states++;
 
 				}
-#endif
 			}
 
 			void release_state(const std::shared_ptr<State> s)
@@ -452,50 +379,6 @@ namespace NP {
 				node_pool.release(n);
 			}
 
-
-#ifdef CONFIG_PARALLEL
-			// make node available for fast lookup
-			void insert_cache_node(Nodes_map_accessor& acc, Node_ref n)
-			{
-				assert(!acc.empty());
-
-				Node_refs& list = acc->second;
-				list.push_front(n);
-			}
-
-			template <typename... Args>
-			Node& new_node_at(const int depth, Nodes_map_accessor& acc, Args&&... args)
-			{
-				assert(!acc.empty());
-				Node_ref n = alloc_node(depth, std::forward<Args>(args)...);
-				DM("new node - global " << n << std::endl);
-				// add node to nodes_by_key map.
-				insert_cache_node(acc, n);
-#ifdef CONFIG_PARALLEL
-				nodes_counter.local()++;
-#else
-				num_nodes++;
-#endif
-				return *n;
-			}
-
-			template <typename... Args>
-			Node& new_node(const int depth, Args&&... args)
-			{
-				Nodes_map_accessor acc;
-				Node_ref n = alloc_node(depth, std::forward<Args>(args)...);
-				while (true) {
-					if (nodes_by_key.find(acc, n->get_key()) || nodes_by_key.insert(acc, n->get_key())) {
-						DM("new node - global " << n << std::endl);
-						// add node to nodes_by_key map.
-						insert_cache_node(acc, n);
-						num_nodes++;
-						return *n;
-					}
-				}
-			}
-
-#else
 			void cache_node(Node_ref n)
 			{
 				// create a new list if needed, or lookup if already existing
@@ -518,7 +401,6 @@ namespace NP {
 				num_nodes++;
 				return n;
 			}
-#endif
 
 			void check_cpu_timeout()
 			{
@@ -578,11 +460,7 @@ namespace NP {
 								//const CoreAvailability empty_cav = {};
 								State_ref next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
 								next->add_state(next_s);
-#ifdef CONFIG_PARALLEL
-								states_counter.local()++;
-#else
 								num_states++;
-#endif
 
 								// update response times
 								update_finish_times(j, frange);
@@ -724,38 +602,6 @@ namespace NP {
 						// update finish-time estimates
 						update_finish_times(j, ftimes);
 
-#ifdef CONFIG_PARALLEL
-						// if we do not have a pointer to a node with the same set of scheduled jobs yet,
-						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
-						if (next == nullptr)
-						{
-							Nodes_map_accessor acc;
-							auto next_key = n.next_key(j);
-							Job_set new_sched_jobs{ n.get_scheduled_jobs(), j.get_job_index() };
-
-							while (next == nullptr || acc.empty()) {
-								// check if key exists
-								if (nodes_by_key.find(acc, next_key)) {
-									for (Node_ref other : acc->second) {
-										if (other->get_scheduled_jobs() == new_sched_jobs) {
-											next = other;
-											DM("=== dispatch: next exists." << std::endl);
-											break;
-										}
-									}
-									if (next == nullptr) {
-										next = &(new_node_at(1, acc, n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(n, j), state_space_data.earliest_certain_source_job_release(n, j), state_space_data.earliest_certain_sequential_source_job_release(n, j)));
-									}
-								}
-								if (next == nullptr) {
-									if (nodes_by_key.insert(acc, next_key)) {
-										next = &(new_node_at(1, acc, n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(n, j), state_space_data.earliest_certain_source_job_release(n, j), state_space_data.earliest_certain_sequential_source_job_release(n, j)));
-									}
-								}
-								// if we raced with concurrent creation, try again
-							}
-						}
-#else
 						// If be_naive, a new node and a new state should be created for each new job dispatch.
 						if (be_naive)
 							next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
@@ -780,7 +626,7 @@ namespace NP {
 							if (next == nullptr)
 								next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
 						}
-#endif
+
 						// next should always exist at this point, possibly without states in it
 						// create a new state resulting from scheduling j in state s on p cores and try to merge it with an existing state in node 'next'.							
 						new_or_merge_state(*next, *s, j.get_job_index(),
@@ -791,25 +637,21 @@ namespace NP {
 							logger.log_job_dispatched(n, j, stimes, ftimes, p, next, current_job_count);
 #endif
 
-#ifndef CONFIG_PARALLEL
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
 						// only do that if we stop the analysis when a deadline miss is found 
 						if (be_naive && early_exit) {
 							check_for_deadline_misses(*n, *next);
 						}
-#endif
 
 						count_edge();
 					}
 				}
 
-#ifndef CONFIG_PARALLEL
 				// if we stop the analysis when a deadline miss is found, then check whether a job will certainly miss 
 				// its deadline because of when the processors become free next.
 				// if we are not using the naive exploration, we check for deadline misses only once per job dispatched
 				if (early_exit && !be_naive && next != nullptr)
 					check_for_deadline_misses(*n, *next);
-#endif
 
 				return dispatched_one;
 			}
@@ -908,18 +750,10 @@ namespace NP {
 
 				int last_num_states = 0;
 				make_initial_node();
-#ifdef CONFIG_PARALLEL
-				tbb::task_group tg;
-#endif
 
 				while (current_job_count < state_space_data.num_jobs()) {
 					Nodes& exploration_front = nodes();
-					unsigned long n = 
-#ifdef CONFIG_PARALLEL
-						exploration_front.unsafe_size();
-#else
-						exploration_front.size();
-#endif
+					unsigned long n = exploration_front.size();
 					if (n == 0)
 					{
 						aborted = true;
@@ -951,25 +785,6 @@ namespace NP {
 					if (aborted)
 						break;
 
-#ifdef CONFIG_PARALLEL
-					Node_ref node;
-					while (exploration_front.try_pop(node)) {
-						tg.run([=] { 
-							//node->consolidate(merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
-							explore(*node); 
-							// If we don't need to collect all nodes, we can remove
-							// all those that we are done with, which saves a lot of
-							// memory.
-							auto states = node->get_states();
-							for (auto s = states->begin(); s != states->end(); s++) {
-								release_state(*s);
-							}
-							release_node(node);
-						});
-					}
-					tg.wait();
-
-#else
 					for (const Node_ref& n : exploration_front) {
 						explore(n);
 						check_cpu_timeout();
@@ -985,7 +800,6 @@ namespace NP {
 							release_node(n);
 						}
 					}
-#endif
 
 					// clean up the state cache if necessary
 					if (!be_naive)
@@ -1003,23 +817,6 @@ namespace NP {
 				}
 				// clean out any remaining nodes
 				nodes_storage.clear();
-
-#ifdef CONFIG_PARALLEL
-				// propagate any updates to the response-time estimates
-				for (auto& r : partial_rta) {
-					for (int i = 0; i < r.size(); ++i) {
-						if (r[i].valid)
-							update_finish_times(rta, i, r[i].rt);
-					}
-				}
-
-				for (auto& c : edge_counter)
-					num_edges += c;
-				for (auto& c : nodes_counter)
-					num_nodes += c;
-				for (auto& c : states_counter)
-					num_states += c;
-#endif
 			}
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH

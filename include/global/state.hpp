@@ -4,7 +4,6 @@
 #include <cassert>
 #include <iostream>
 #include <ostream>
-
 #include <set>
 
 #include "config.h"
@@ -14,10 +13,6 @@
 #include "statistics.hpp"
 #include "util.hpp"
 #include "global/state_space_data.hpp"
-
-#ifdef CONFIG_PARALLEL
-#include <tbb/mutex.h>
-#endif
 
 namespace NP {
 
@@ -733,10 +728,7 @@ namespace NP {
 					return x->earliest_finish_time() < y->earliest_finish_time();
 				}
 			};
-
-#ifdef CONFIG_PARALLEL
-			tbb::mutex mtx;
-#endif			
+		
 			typedef typename std::multiset<State_ref, eft_compare> State_ref_queue;
 			State_ref_queue states;
 
@@ -994,9 +986,6 @@ namespace NP {
 
 			void add_state(State_ref s)
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::mutex::scoped_lock lock(mtx);
-#endif
 				update_internal_variables(s);
 				states.insert(s);
 			}
@@ -1042,9 +1031,6 @@ namespace NP {
 			// Returns the number of existing states the new state was merged with.
 			int merge_states(const Schedule_state<Time>& s, bool conservative, bool use_job_finish_times = false, int budget = 1)
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::mutex::scoped_lock lock(mtx);
-#endif
 				// if we do not use a conservative merge, try to merge with up to 'budget' states if possible.
 				int merge_budget = conservative ? 1 : budget;
 
