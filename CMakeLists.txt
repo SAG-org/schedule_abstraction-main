@@ -5,7 +5,7 @@ project(NP_schedulabiliy_test VERSION 3.1.12 LANGUAGES CXX)
 include_directories(include)
 include_directories(lib/include)
 
-option(PARALLEL_RUN "Enable parallel run" OFF)
+option(PARALLEL_RUN "Enable parallel run" ON)  # Changed default to ON
 option(USE_TBB_MALLOC "Use the Intel TBB scalable memory allocator" OFF)
 option(USE_JE_MALLOC "Use the Facebook jemalloc scalable memory allocator" OFF)
 option(COLLECT_SCHEDULE_GRAPHS "Enable the collection of schedule graphs (disables parallel)" OFF)
@@ -24,16 +24,19 @@ endif ()
 
 if (PARALLEL_RUN OR USE_TBB_MALLOC)
     find_package(TBB REQUIRED)
+    message(NOTICE "Intel TBB found and will be used for parallel execution")
 endif()
 
 if (COLLECT_SCHEDULE_GRAPHS)
     add_compile_definitions(CONFIG_COLLECT_SCHEDULE_GRAPH)
     if (PARALLEL_RUN)
         message(WARNING "Schedule graph collection is not supported in parallel mode")
+        set(PARALLEL_RUN OFF)
     endif()
 elseif (PARALLEL_RUN)
     set(TBB_LIB TBB::tbb)
     add_compile_definitions(CONFIG_PARALLEL)
+    message(NOTICE "Parallel execution enabled with TBB")
 endif ()
 
 if (USE_JE_MALLOC)

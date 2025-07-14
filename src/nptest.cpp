@@ -21,6 +21,11 @@ static bool merge_use_job_finish_times;
 static int merge_depth;
 static bool want_dense;
 
+#ifdef CONFIG_PARALLEL
+static bool want_parallel = true;
+static unsigned int num_threads = 0;
+#endif
+
 static bool want_precedence = false;
 static std::string precedence_file;
 
@@ -37,6 +42,7 @@ static std::string platform_file;
 static bool want_dot_graph;
 static std::string dot_file;
 #endif
+
 static double timeout;
 static long mem_max = 0; // in KiB
 static unsigned int max_depth = 0;
@@ -105,6 +111,10 @@ static Analysis_result analyze(
 	opts.merge_conservative = merge_conservative;
 	opts.merge_depth = merge_depth;
 	opts.merge_use_job_finish_times = merge_use_job_finish_times;
+#ifdef CONFIG_PARALLEL
+	opts.parallel_enabled = want_parallel;
+	opts.num_threads = num_threads;
+#endif
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 	NP::Global::Log_options<Time> log_opts;
 	log_opts.log = want_dot_graph;
@@ -459,6 +469,20 @@ int main(int argc, char** argv)
 		.help("If 'save-graph is set', allows to pass a YAML file configuring what part of the state graph is recorded and what is printed in the state graph. Default: complete state space is recorded and default info is printed.")
 		.set_default("");
 
+#ifdef CONFIG_PARALLEL
+	parser.add_option("--parallel").dest("parallel").set_default("1")
+		.action("store_const").set_const("1")
+		.help("enable parallel execution (default: on when compiled with CONFIG_PARALLEL)");
+
+	parser.add_option("--no-parallel").dest("parallel").set_default("1")
+		.action("store_const").set_const("0")
+		.help("disable parallel execution");
+
+	parser.add_option("--threads").dest("num_threads")
+		.help("number of threads to use (0 = auto-detect)")
+		.set_default("0");
+#endif
+
 	auto options = parser.parse_args(argc, argv);
 	//all the options that could have been entered above are processed below and appropriate variables
 	// are assigned their respective values.
@@ -567,6 +591,19 @@ int main(int argc, char** argv)
 			<< "is not set)." << std::endl;
 		return 2;
 	}
+#endif
+
+#ifdef CONFIG_PARALLEL
+	want_parallel = options.get("parallel");
+	num_threads = options.get("num_threads");
+#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
+	if (want_parallel && want_dot_graph) {
+		std::cerr << "Warning: Parallel execution is not compatible with "
+		          << "schedule graph collection. Disabling parallel execution." 
+		          << std::endl;
+		want_parallel = false;
+	}
+#endif
 #endif
 
 	// this prints the header in the output on the console

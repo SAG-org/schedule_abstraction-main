@@ -13,6 +13,16 @@
 #include <ostream>
 #include <memory>
 
+#ifdef CONFIG_PARALLEL
+#include <atomic>
+#include <mutex>
+#include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_queue.h>
+#include <tbb/spin_rw_mutex.h>
+#include <tbb/parallel_for.h>
+#include <tbb/task_arena.h>
+#endif
+
 #include "config.h"
 #include "problem.hpp"
 #include "global/state_space_data.hpp"
@@ -51,7 +61,11 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts);
+					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
+#ifdef CONFIG_PARALLEL
+					, opts.parallel_enabled, opts.num_threads
+#endif
+				);
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -69,7 +83,11 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose);
+					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
+#ifdef CONFIG_PARALLEL
+					, opts.parallel_enabled, opts.num_threads
+#endif
+				);
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -107,7 +125,18 @@ namespace NP {
 			}
 
 			Interval<Time> get_finish_times(Job_index j) const
-			{
+				{
+#ifdef CONFIG_PARALLEL
+				if (parallel_enabled) {
+					std::lock_guard<std::mutex> lock(rta_mutex);
+					if (rta[j].valid) {
+						return rta[j].rt;
+					}
+					else {
+						return Interval<Time>{0, Time_model::constants<Time>::infinity()};
+					}
+				}
+#endif
 				if (rta[j].valid) {
 					return rta[j].rt;
 				}
@@ -133,18 +162,30 @@ namespace NP {
 
 			//currently unused, only required to compile nptest.cpp correctly
 			unsigned long number_of_nodes() const
-			{
+				{
+#ifdef CONFIG_PARALLEL
+				return parallel_enabled ? num_nodes.load() : num_nodes;
+#else
 				return num_nodes;
+#endif
 			}
 
 			unsigned long number_of_states() const
-			{
+				{
+#ifdef CONFIG_PARALLEL
+				return parallel_enabled ? num_states.load() : num_states;
+#else
 				return num_states;
+#endif
 			}
 
 			unsigned long number_of_edges() const
-			{
+				{
+#ifdef CONFIG_PARALLEL
+				return parallel_enabled ? num_edges.load() : num_edges;
+#else
 				return num_edges;
+#endif
 			}
 
 			unsigned long max_exploration_front_width() const
@@ -163,7 +204,12 @@ namespace NP {
 			}
 
 			typedef std::shared_ptr<Node> Node_ref;
+#ifdef CONFIG_PARALLEL
+			// Thread-safe concurrent queue for storing nodes during parallel execution
+			typedef tbb::concurrent_queue<Node_ref> Nodes;
+#else
 			typedef std::deque<Node_ref> Nodes;
+#endif
 			typedef std::vector<Nodes> Nodes_storage;
 
 		private:
@@ -171,7 +217,12 @@ namespace NP {
 			typedef typename std::forward_list<Node_ref> Node_refs;
 			typedef std::shared_ptr<State> State_ref;
 			typedef typename std::forward_list<State_ref> State_refs;
+			
+#ifdef CONFIG_PARALLEL
+			typedef tbb::concurrent_unordered_map<hash_value_t, Node_refs> Nodes_map;
+#else
 			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
+#endif
 			typedef const Job<Time>* Job_ref;
 
 			// Similar to uni/space.hpp, make Response_times a vector of intervals.
@@ -218,8 +269,24 @@ namespace NP {
 			Object_pool<Node> node_pool;
 			Object_pool<State> state_pool;
 
+#ifdef CONFIG_PARALLEL
+			// Thread-safe statistics and control
+			std::atomic<unsigned long> num_nodes, num_states, num_edges;
+			mutable std::mutex rta_mutex;
+			mutable std::mutex abort_mutex;
+			mutable std::mutex node_creation_mutex;
+			// Thread-safe access to nodes_storage
+			mutable tbb::spin_rw_mutex nodes_storage_mutex;
+			bool parallel_enabled;
+			unsigned int num_threads;
+			
+			// TBB task arena for thread control 
+			std::unique_ptr<tbb::task_arena> task_arena_;
+#else
 			unsigned long num_nodes, num_states, num_edges;
-			// updated only by main thread
+#endif
+
+			// updated only by main thread - no protection needed
 			unsigned long current_job_count, max_width;
 			std::vector<std::pair<unsigned long, unsigned long>> width;
 
@@ -245,6 +312,10 @@ namespace NP {
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 				, Log_options<Time> log_opts = Log_options<Time>()
 #endif
+#ifdef CONFIG_PARALLEL
+				, bool parallel_enabled = false,
+				unsigned int num_threads = 0
+#endif
 			)	: state_space_data(jobs, edges, aborts, num_cpus)
 				, aborted(false)
 				, timed_out(false)
@@ -256,6 +327,10 @@ namespace NP {
 				, max_depth(max_depth)
 				, merge_opts(merge_options)
 				, verbose(verbose)
+#ifdef CONFIG_PARALLEL
+				, parallel_enabled(parallel_enabled)
+				, num_threads(num_threads)
+#endif
 				, num_nodes(0)
 				, num_states(0)
 				, num_edges(0)
@@ -272,6 +347,17 @@ namespace NP {
 				, logger(log_opts.log_cond)
 #endif
 			{
+#ifdef CONFIG_PARALLEL
+				// Initialize TBB task arena with specified thread count 
+				if (parallel_enabled) {
+					if (num_threads > 0) {
+						task_arena_ = std::make_unique<tbb::task_arena>(num_threads);
+					} else {
+						task_arena_ = std::make_unique<tbb::task_arena>(tbb::task_arena::automatic);
+					}
+					task_arena_->initialize();
+				}
+#endif
 			}
 
 		private:
@@ -279,9 +365,98 @@ namespace NP {
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			SAG_logger<Time> logger; // { { 0, Time_model::constants<Time>::infinity() }, { 0, 10000 }, { 7 }, {}, false };
 #endif
-			void count_edge()
+
+#ifdef CONFIG_PARALLEL
+			// Thread-safe helper methods
+			void count_edge_safe()
+			{
+				if (parallel_enabled) {
+					num_edges.fetch_add(1, std::memory_order_relaxed);
+				} else {
+					num_edges++;
+				}
+			}
+			
+			bool check_abort_safe()
+			{
+				if (parallel_enabled) {
+					std::lock_guard<std::mutex> lock(abort_mutex);
+					return aborted;
+				}
+				return aborted;
+			}
+			
+			void set_abort_safe(bool value)
+			{
+				if (parallel_enabled) {
+					std::lock_guard<std::mutex> lock(abort_mutex);
+					aborted = value;
+				} else {
+					aborted = value;
+				}
+			}
+			
+			void increment_nodes_safe()
+			{
+				if (parallel_enabled) {
+					num_nodes.fetch_add(1, std::memory_order_relaxed);
+				} else {
+					num_nodes++;
+				}
+			}
+			
+			void increment_states_safe()
+			{
+				if (parallel_enabled) {
+					num_states.fetch_add(1, std::memory_order_relaxed);
+				} else {
+					num_states++;
+				}
+			}
+			
+			void decrement_states_safe(int count)
+			{
+				if (parallel_enabled) {
+					num_states.fetch_sub(count, std::memory_order_relaxed);
+				} else {
+					num_states -= count;
+				}
+			}
+#else
+			void count_edge_safe()
 			{
 				num_edges++;
+			}
+			
+			bool check_abort_safe()
+			{
+				return aborted;
+			}
+			
+			void set_abort_safe(bool value)
+			{
+				aborted = value;
+			}
+			
+			void increment_nodes_safe()
+			{
+				num_nodes++;
+			}
+			
+			void increment_states_safe()
+			{
+				num_states++;
+			}
+			
+			void decrement_states_safe(int count)
+			{
+				num_states -= count;
+			}
+#endif
+
+			void count_edge()
+			{
+				count_edge_safe();
 			}
 
 			void update_finish_times(Response_times& r, const Job_index id,
@@ -305,14 +480,25 @@ namespace NP {
 					observed_deadline_miss = true;
 
 					if (early_exit)
-						aborted = true;
+						set_abort_safe(true);
 				}
 			}
 
 			void update_finish_times(const Job<Time>& j, Interval<Time> range)
 			{
+#ifdef CONFIG_PARALLEL
+				if (parallel_enabled) {
+					std::lock_guard<std::mutex> lock(rta_mutex);
+					Response_times& r = rta;
+					update_finish_times(r, j, range);
+				} else {
+					Response_times& r = rta;
+					update_finish_times(r, j, range);
+				}
+#else
 				Response_times& r = rta;
 				update_finish_times(r, j, range);
+#endif
 			}
 
 			void make_initial_node() {
@@ -320,7 +506,7 @@ namespace NP {
 				Node_ref n = new_node(0, cores_initial_state, state_space_data);
 				State_ref s = new_state(cores_initial_state, state_space_data);
 				n->add_state(s);
-				num_states++;
+				increment_states_safe();
 			}
 
 			Nodes& nodes(const int depth = 0)
@@ -332,7 +518,15 @@ namespace NP {
 			Node_ref alloc_node(const int depth, Args&&... args)
 			{
 				Node_ref n = node_pool.acquire(std::forward<Args>(args)...);
-				nodes(depth).push_back(n);
+#ifdef CONFIG_PARALLEL
+				if (parallel_enabled) {
+					nodes_storage[(current_job_count + depth) % nodes_storage.size()].push(n);
+				} else {
+					nodes_storage[(current_job_count + depth) % nodes_storage.size()].push(n);
+				}
+#else
+				nodes_storage[(current_job_count + depth) % nodes_storage.size()].push_back(n);
+#endif
 				return n;
 			}
 
@@ -341,7 +535,6 @@ namespace NP {
 			{
 				return state_pool.acquire(std::forward<Args>(args)...);
 			}
-
 
 			template <typename... Args>
 			void new_or_merge_state(Node& n, Args&&... args)
@@ -353,18 +546,18 @@ namespace NP {
 					int n_states_merged = n.merge_states(*new_s, merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
 					if (n_states_merged > 0) {
 						release_state(new_s); // if we could merge no need to keep track of the new state anymore
-						num_states -= (n_states_merged - 1);
+						decrement_states_safe(n_states_merged - 1);
 					}
 					else
 					{
 						n.add_state(new_s); // else add the new state to the node
-						num_states++;
+						increment_states_safe();
 					}
 				}
 				else
 				{
 					n.add_state(new_s); // else add the new state to the node
-					num_states++;
+					increment_states_safe();
 
 				}
 			}
@@ -405,7 +598,7 @@ namespace NP {
 			void check_cpu_timeout()
 			{
 				if (timeout && get_cpu_time() > timeout) {
-					aborted = true;
+					set_abort_safe(true);
 					timed_out = true;
 				}
 			}
@@ -414,7 +607,7 @@ namespace NP {
 			{
 				long mem = mem_consumption;
 				if (max_mem && mem > max_mem) {
-					aborted = true;
+					set_abort_safe(true);
 					mem_out = true;
 				}
 				return mem;
@@ -423,7 +616,7 @@ namespace NP {
 			void check_depth_abort()
 			{
 				if (max_depth && current_job_count > max_depth)
-					aborted = true;
+					set_abort_safe(true);
 			}
 
 			bool unfinished(const Node& n, const Job<Time>& j) const
@@ -452,7 +645,7 @@ namespace NP {
 							// if we stop at the first deadline miss, abort and create node in the graph for explanation purposes
 							if (early_exit)
 							{
-								aborted = true;
+								set_abort_safe(true);
 								// create a dummy node for explanation purposes
 								auto frange = new_n.get_last_state()->core_availability(pmin) + j.get_cost(pmin);
 								Node_ref next =
@@ -460,7 +653,7 @@ namespace NP {
 								//const CoreAvailability empty_cav = {};
 								State_ref next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
 								next->add_state(next_s);
-								num_states++;
+								increment_states_safe();
 
 								// update response times
 								update_finish_times(j, frange);
@@ -727,7 +920,7 @@ namespace NP {
 				if (!found_one && !all_jobs_scheduled(*n)) {
 					// out of options and we didn't schedule all jobs
 					observed_deadline_miss = true;
-					aborted = true;
+					set_abort_safe(true);
 				}
 			}
 
@@ -748,22 +941,35 @@ namespace NP {
 					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
 				}
 
-				int last_num_states = 0;
+#ifdef CONFIG_PARALLEL
+				int last_num_states = parallel_enabled ? num_states.load() : num_states;
+#else
+				int last_num_states = num_states;
+#endif
 				make_initial_node();
 
 				while (current_job_count < state_space_data.num_jobs()) {
 					Nodes& exploration_front = nodes();
+#ifdef CONFIG_PARALLEL
+					unsigned long n = exploration_front.unsafe_size();
+#else
 					unsigned long n = exploration_front.size();
+#endif
 					if (n == 0)
 					{
-						aborted = true;
+						set_abort_safe(true);
 						break;
 					}
 
-					// keep track of exploration front width
+					// keep track of exploration front width (main thread only - no protection needed)
 					max_width = std::max(max_width, n);
-					width[current_job_count] = { n, num_states - last_num_states };
-					last_num_states = num_states;
+#ifdef CONFIG_PARALLEL
+					int current_states = parallel_enabled ? num_states.load() : num_states;
+#else
+					int current_states = num_states;
+#endif
+					width[current_job_count] = { n, current_states - last_num_states };
+					last_num_states = current_states;
 
 					int time = get_cpu_time();
 					if (time > last_time + 4) {
@@ -782,24 +988,70 @@ namespace NP {
 
 					check_depth_abort();
 					check_cpu_timeout();
-					if (aborted)
+					if (check_abort_safe())
 						break;
 
-					for (const Node_ref& n : exploration_front) {
-						explore(n);
+#ifdef CONFIG_PARALLEL
+					// Parallel processing of exploration front within task arena
+					if (parallel_enabled && n >= 4) {  // Parallel threshold
+						task_arena_->execute([&]() {
+							tbb::parallel_for(tbb::blocked_range<size_t>(0, exploration_front.unsafe_size()),
+								[&](const tbb::blocked_range<size_t>& range) {
+									Node_ref node;
+									while (exploration_front.try_pop(node)) {
+										if (check_abort_safe()) break;
+										
+										explore(node);
+										
+										if (check_abort_safe()) break;
+
+										// Clean up nodes that are no longer referenced
+										if (node.unique()) {
+											auto states = node->get_states();
+											for (auto s = states->begin(); s != states->end(); s++) {
+												release_state(*s);
+											}
+											release_node(node);
+										}
+									}
+								});
+						});
+					} else {
+						// Sequential processing for small fronts or when parallel is disabled
+						Node_ref node;
+						while (exploration_front.try_pop(node)) {
+							explore(node);
+							check_cpu_timeout();
+							if (check_abort_safe())
+								break;
+
+							if (node.unique()) {
+								auto states = node->get_states();
+								for (auto s = states->begin(); s != states->end(); s++) {
+									release_state(*s);
+								}
+								release_node(node);
+							}
+						}
+					}
+#else
+					// Original sequential processing
+					for (const Node_ref& node : exploration_front) {
+						explore(node);
 						check_cpu_timeout();
-						if (aborted)
+						if (check_abort_safe())
 							break;
 
 						// If the node is not refered to anymore, we can reuse the node and state objects for other states.
-						if (n.unique()) {
-							auto states = n->get_states();
+						if (node.unique()) {
+							auto states = node->get_states();
 							for (auto s = states->begin(); s != states->end(); s++) {
 								release_state(*s);
 							}
-							release_node(n);
+							release_node(node);
 						}
 					}
+#endif
 
 					// clean up the state cache if necessary
 					if (!be_naive)

@@ -6,6 +6,11 @@
 #include <ostream>
 #include <set>
 
+#ifdef CONFIG_PARALLEL
+#include <tbb/spin_rw_mutex.h>
+#include <tbb/spin_mutex.h>
+#endif
+
 #include "config.h"
 #include "cache.hpp"
 #include "index_set.hpp"
@@ -59,7 +64,8 @@ namespace NP {
 					: idx(idx),
 					parallelism(parallelism),
 					finish_time(finish_time)
-				{}
+				{
+				}
 			};
 
 			// imprecise set of certainly running jobs, on how many cores they run, and when they should finish
@@ -67,6 +73,11 @@ namespace NP {
 
 			// job_finish_times holds the finish times of all the jobs that still have an unscheduled successor
 			Job_finish_times job_finish_times;
+
+#ifdef CONFIG_PARALLEL
+			// Thread-safe synchronization for state modification
+			mutable tbb::spin_rw_mutex state_mutex;
+#endif
 
 		public:
 
@@ -90,7 +101,7 @@ namespace NP {
 				std::vector<Time> amin, amax;
 				amin.reserve(proc_initial_state.size());
 				amax.reserve(proc_initial_state.size());
-				for(const auto& a : proc_initial_state) {
+				for (const auto& a : proc_initial_state) {
 					amin.push_back(a.min());
 					amax.push_back(a.max());
 				}
@@ -115,12 +126,16 @@ namespace NP {
 				Time next_source_job_rel,
 				unsigned int ncores = 1)
 			{
+#ifdef CONFIG_PARALLEL
+				// Acquire read lock on source state during construction
+				tbb::spin_rw_mutex::scoped_lock from_lock(from.state_mutex, false);
+#endif
 				const Successors& successors_of = state_space_data.successors_suspensions;
 				const Predecessors& predecessors_of = state_space_data.predecessors_suspensions;
-				const Job_precedence_set & predecessors = state_space_data.predecessors_of(j);
+				const Job_precedence_set& predecessors = state_space_data.predecessors_of(j);
 				// update the set of certainly running jobs and
 				// get the number of cores certainly used by active predecessors
-				int n_prec= update_certainly_running_jobs_and_get_num_prec(from, j, start_times, finish_times, ncores, predecessors);
+				int n_prec = update_certainly_running_jobs_and_get_num_prec(from, j, start_times, finish_times, ncores, predecessors);
 
 				// calculate the cores availability intervals resulting from dispatching job j on ncores in state 'from'
 				update_core_avail(from, j, predecessors, n_prec, start_times, finish_times, ncores);
@@ -142,6 +157,9 @@ namespace NP {
 			// initial state -- nothing yet has finished, nothing is running
 			void reset(const unsigned int num_processors, const State_space_data<Time>& state_space_data)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, true); // write lock
+#endif
 				core_avail = Core_availability(num_processors, Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
@@ -150,10 +168,13 @@ namespace NP {
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, true); // write lock
+#endif
 				core_avail = Core_availability(proc_initial_state.size(), Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
-				
+
 				assert(core_avail.size() > 0);
 				std::vector<Time> amin, amax;
 				amin.reserve(proc_initial_state.size());
@@ -182,6 +203,11 @@ namespace NP {
 				Time next_source_job_rel,
 				unsigned int ncores = 1)
 			{
+#ifdef CONFIG_PARALLEL
+				// Acquire read lock on source state and write lock on this state
+				tbb::spin_rw_mutex::scoped_lock from_lock(from.state_mutex, false);
+				tbb::spin_rw_mutex::scoped_lock this_lock(state_mutex, true);
+#endif
 				const Successors& successors_of = state_space_data.successors_suspensions;
 				const Predecessors& predecessors_of = state_space_data.predecessors_suspensions;
 				const Job_precedence_set& predecessors = state_space_data.predecessors_of(j);
@@ -211,11 +237,18 @@ namespace NP {
 
 			const Core_availability& get_cores_availability() const
 			{
+#ifdef CONFIG_PARALLEL
+				// No lock needed for const access to immutable reference
+				// The caller should ensure proper synchronization if needed
+#endif
 				return core_avail;
 			}
 
 			Interval<Time> core_availability(unsigned long p = 1) const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
+#endif
 				assert(core_avail.size() > 0);
 				assert(core_avail.size() >= p);
 				assert(p > 0);
@@ -224,11 +257,17 @@ namespace NP {
 
 			Time earliest_finish_time() const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
+#endif
 				return core_avail[0].min();
 			}
 
 			bool get_finish_times(Job_index j, Interval<Time>& ftimes) const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
+#endif
 				int offset = jft_find(j);
 				if (offset < job_finish_times.size() && job_finish_times[offset].first == j)
 				{
@@ -243,16 +282,26 @@ namespace NP {
 
 			Time next_certain_gang_source_job_disptach() const
 			{
+#ifdef CONFIG_PARALLEL
+				// Atomic read of primitive type - no lock needed
+#endif
 				return earliest_certain_gang_source_job_disptach;
 			}
 
 			Time next_certain_successor_jobs_disptach() const
 			{
+#ifdef CONFIG_PARALLEL
+				// Atomic read of primitive type - no lock needed
+#endif
 				return earliest_certain_successor_job_disptach;
 			}
 
 			const std::vector<Running_job>& get_cert_running_jobs() const
 			{
+#ifdef CONFIG_PARALLEL
+				// No lock needed for const access to immutable reference
+				// The caller should ensure proper synchronization if needed
+#endif
 				return certain_jobs;
 			}
 
@@ -264,6 +313,9 @@ namespace NP {
 			// of other are subintervals of this. Otherwise, `other_in_this` is set to false.
 			bool core_avail_overlap(const Core_availability& other, bool conservative, bool& other_in_this) const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
+#endif
 				assert(core_avail.size() == other.size());
 				other_in_this = false;
 				// Conservative means that all the availability intervals of one state must be within 
@@ -300,20 +352,28 @@ namespace NP {
 			// check if 'other' state can merge with this state
 			bool can_merge_with(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times = false) const
 			{
-				bool other_in_this;
-				if (core_avail_overlap(other.core_avail, conservative, other_in_this))
-				{
-					if (use_job_finish_times)
-						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
-					else
-						return true;
+#ifdef CONFIG_PARALLEL
+				// Order locks to prevent deadlock - lock by address order
+				if (this < &other) {
+					tbb::spin_rw_mutex::scoped_lock lock1(state_mutex, false);
+					tbb::spin_rw_mutex::scoped_lock lock2(other.state_mutex, false);
+					return can_merge_with_impl(other, conservative, use_job_finish_times);
 				}
-				else
-					return false;
+				else {
+					tbb::spin_rw_mutex::scoped_lock lock1(other.state_mutex, false);
+					tbb::spin_rw_mutex::scoped_lock lock2(state_mutex, false);
+					return can_merge_with_impl(other, conservative, use_job_finish_times);
+				}
+#else
+				return can_merge_with_impl(other, conservative, use_job_finish_times);
+#endif
 			}
 
 			bool can_merge_with(const Core_availability& cav, const Job_finish_times& jft, bool conservative, bool use_job_finish_times = false) const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
+#endif
 				if (core_avail_overlap(cav, conservative))
 				{
 					if (use_job_finish_times)
@@ -328,13 +388,21 @@ namespace NP {
 			// first check if 'other' state can merge with this state, then, if yes, merge 'other' with this state.
 			bool try_to_merge(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times = false)
 			{
-				if (!can_merge_with(other, conservative, use_job_finish_times))
-					return false;
-
-				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
-
-				DM("+++ merged " << other << " into " << *this << std::endl);
-				return true;
+#ifdef CONFIG_PARALLEL
+				// Order locks to prevent deadlock - lock by address order
+				if (this < &other) {
+					tbb::spin_rw_mutex::scoped_lock lock1(state_mutex, true); // write lock on this
+					tbb::spin_rw_mutex::scoped_lock lock2(other.state_mutex, false); // read lock on other
+					return try_to_merge_impl(other, conservative, use_job_finish_times);
+				}
+				else {
+					tbb::spin_rw_mutex::scoped_lock lock1(other.state_mutex, false); // read lock on other
+					tbb::spin_rw_mutex::scoped_lock lock2(state_mutex, true); // write lock on this
+					return try_to_merge_impl(other, conservative, use_job_finish_times);
+				}
+#else
+				return try_to_merge_impl(other, conservative, use_job_finish_times);
+#endif
 			}
 
 			void merge(
@@ -343,6 +411,10 @@ namespace NP {
 				const std::vector<Running_job>& cert_j,
 				Time ecsj_ready_time)
 			{
+#ifdef CONFIG_PARALLEL
+				// This is called from try_to_merge which already holds the lock
+				// No additional locking needed
+#endif
 				for (int i = 0; i < core_avail.size(); i++)
 					core_avail[i] |= cav[i];
 
@@ -382,6 +454,9 @@ namespace NP {
 			friend std::ostream& operator<< (std::ostream& stream,
 				const Schedule_state<Time>& s)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(s.state_mutex, false); // read lock
+#endif
 				stream << "Global::State(";
 				for (const auto& a : s.core_avail)
 					stream << "[" << a.from() << ", " << a.until() << "] ";
@@ -394,6 +469,97 @@ namespace NP {
 			}
 
 		private:
+
+#ifdef CONFIG_PARALLEL
+			// Thread-safe implementation methods (called with locks already held)
+			bool can_merge_with_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times) const
+			{
+				bool other_in_this;
+				// Call the internal version that doesn't acquire locks since we already hold them
+				if (core_avail_overlap_impl(other.core_avail, conservative, other_in_this))
+				{
+					if (use_job_finish_times)
+						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
+					else
+						return true;
+				}
+				else
+					return false;
+			}
+
+			bool try_to_merge_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times)
+			{
+				if (!can_merge_with_impl(other, conservative, use_job_finish_times))
+					return false;
+
+				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
+
+				DM("+++ merged " << other << " into " << *this << std::endl);
+				return true;
+			}
+
+			// Internal implementation that doesn't acquire locks (assumes locks are already held)
+			bool core_avail_overlap_impl(const Core_availability& other, bool conservative, bool& other_in_this) const
+			{
+				assert(core_avail.size() == other.size());
+				other_in_this = false;
+				// Conservative means that all the availability intervals of one state must be within 
+				// the interval of the other state.
+				// If conservative is false, the a simple overlap or contiguity between inverals is enough
+				if (conservative) {
+					bool overlap = true;
+					// check if all availability intervals of other are within the intervals of this
+					for (int i = 0; i < core_avail.size(); i++) {
+						if (!core_avail[i].contains(other[i])) {
+							overlap = false;
+							break;
+						}
+					}
+					if (overlap == true) {
+						other_in_this = true;
+						return true;
+					}
+					// check if all availability intervals of this are within the intervals of other
+					for (int i = 0; i < core_avail.size(); i++) {
+						if (!other[i].contains(core_avail[i])) {
+							return false;;
+						}
+					}
+				}
+				else {
+					for (int i = 0; i < core_avail.size(); i++)
+						if (!core_avail[i].intersects(other[i]))
+							return false;
+				}
+				return true;
+			}
+#else
+			bool can_merge_with_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times) const
+			{
+				bool other_in_this;
+				if (core_avail_overlap(other.core_avail, conservative, other_in_this))
+				{
+					if (use_job_finish_times)
+						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
+					else
+						return true;
+				}
+				else
+					return false;
+			}
+
+			bool try_to_merge_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times)
+			{
+				if (!can_merge_with_impl(other, conservative, use_job_finish_times))
+					return false;
+
+				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
+
+				DM("+++ merged " << other << " into " << *this << std::endl);
+				return true;
+			}
+#endif
+
 			// update the list of jobs that are certainly running in the current system state 
 			// and returns the number of predecessors of job `j` that were certainly running on cores in the previous system state
 			int update_certainly_running_jobs_and_get_num_prec(const Schedule_state& from,
@@ -434,7 +600,7 @@ namespace NP {
 					Parallelism p(ncores, ncores);
 					certain_jobs.emplace_back(j, p, finish_times);
 				}
-				
+
 				return n_prec;
 			}
 
@@ -449,13 +615,13 @@ namespace NP {
 				auto lst = start_times.max();
 				auto eft = finish_times.min();
 				auto lft = finish_times.max();
-				
+
 
 				// compute the cores availability intervals
 				Time* ca = new Time[n_cores];
 				Time* pa = new Time[n_cores];
 				unsigned int ca_idx = 0, pa_idx = 0;
-				
+
 				// Keep pa and ca sorted, by adding the value at the correct place.
 				bool eft_added_to_pa = false;
 				bool lft_added_to_ca = false;
@@ -718,6 +884,11 @@ namespace NP {
 			unsigned int num_cpus;
 			unsigned int num_jobs_scheduled;
 
+#ifdef CONFIG_PARALLEL
+			// Thread-safe state container and synchronization
+			mutable tbb::spin_rw_mutex states_mutex;
+#endif
+
 			// no accidental copies
 			Schedule_node(const Schedule_node& origin) = delete;
 
@@ -728,7 +899,7 @@ namespace NP {
 					return x->earliest_finish_time() < y->earliest_finish_time();
 				}
 			};
-		
+
 			typedef typename std::multiset<State_ref, eft_compare> State_ref_queue;
 			State_ref_queue states;
 
@@ -742,7 +913,7 @@ namespace NP {
 				, a_max{ 0 }
 				, num_jobs_scheduled(0)
 				, earliest_pending_release{ 0 }
-				, next_certain_source_job_release {Time_model::constants<Time>::infinity() }
+				, next_certain_source_job_release{ Time_model::constants<Time>::infinity() }
 				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ Time_model::constants<Time>::infinity() }
 				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
@@ -750,13 +921,13 @@ namespace NP {
 			}
 
 			// initial node
-			Schedule_node (unsigned int num_cores, const State_space_data<Time>& state_space_data)
+			Schedule_node(unsigned int num_cores, const State_space_data<Time>& state_space_data)
 				: lookup_key{ 0 }
 				, num_cpus(num_cores)
 				, finish_time{ 0,0 }
 				, a_max{ 0 }
 				, num_jobs_scheduled(0)
-				, earliest_pending_release{ state_space_data.get_earliest_job_arrival()}
+				, earliest_pending_release{ state_space_data.get_earliest_job_arrival() }
 				, next_certain_successor_jobs_disptach{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ state_space_data.get_earliest_certain_seq_source_job_release() }
 				, next_certain_gang_source_job_disptach{ Time_model::constants<Time>::infinity() }
@@ -782,10 +953,10 @@ namespace NP {
 				}
 				finish_time.extend_to(a_max);
 				finish_time.lower_bound(a_min);
-				
+
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
 			}
-			
+
 
 			// transition: new node by scheduling a job 'j' in an existing node 'from'
 			Schedule_node(
@@ -815,9 +986,9 @@ namespace NP {
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 			{
-				/*for (auto s = states->begin(); s != states->end(); s++) {
-					release_state((std::shared_ptr<State>) s);
-				}*/
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
 				states.clear();
 
 				lookup_key = 0;
@@ -843,9 +1014,9 @@ namespace NP {
 
 			void reset(unsigned int num_cores, const State_space_data<Time>& state_space_data)
 			{
-				/*for (auto s = states->begin(); s != states->end(); s++) {
-					release_state((std::shared_ptr<State>) s);
-				}*/
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
 				states.clear();
 
 				lookup_key = 0;
@@ -872,15 +1043,15 @@ namespace NP {
 				const Time next_certain_sequential_source_job_release // the next time a job without predecessor that can execute on a single core is certainly released
 			)
 			{
-				/*for (auto s = states->begin(); s != states->end(); s++) {
-					release_state((std::shared_ptr<State>) s);
-				}*/
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
 				states.clear();
 				scheduled_jobs.set(from.scheduled_jobs, idx);
 				lookup_key = from.next_key(j);
 				num_cpus = from.num_cpus;
 				num_jobs_scheduled = from.num_jobs_scheduled + 1;
-				finish_time = {0, Time_model::constants<Time>::infinity()};
+				finish_time = { 0, Time_model::constants<Time>::infinity() };
 				a_max = Time_model::constants<Time>::infinity();
 				earliest_pending_release = next_earliest_release;
 				this->next_certain_source_job_release = next_certain_source_job_release;
@@ -986,6 +1157,9 @@ namespace NP {
 
 			void add_state(State_ref s)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
 				update_internal_variables(s);
 				states.insert(s);
 			}
@@ -993,6 +1167,9 @@ namespace NP {
 			friend std::ostream& operator<< (std::ostream& stream,
 				const Schedule_node<Time>& n)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(n.states_mutex, false); // read lock
+#endif
 				stream << "Node(" << n.states.size() << ")";
 				return stream;
 			}
@@ -1000,23 +1177,38 @@ namespace NP {
 			//return the number of states in the node
 			int states_size() const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, false); // read lock
+#endif
 				return states.size();
 			}
 
 			const State_ref get_first_state() const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, false); // read lock
+#endif
 				auto first = states.begin();
 				return *first;
 			}
 
 			const State_ref get_last_state() const
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, false); // read lock
+#endif
 				auto last = --(states.end());
 				return *last;
 			}
 
 			const State_ref_queue* get_states() const
 			{
+#ifdef CONFIG_PARALLEL
+				// Note: This method returns a pointer to the internal container,
+				// which is inherently not thread-safe. The caller must ensure
+				// proper synchronization when accessing the returned pointer.
+				// Consider using states_size() and iterator methods instead.
+#endif
 				return &states;
 			}
 
@@ -1031,12 +1223,15 @@ namespace NP {
 			// Returns the number of existing states the new state was merged with.
 			int merge_states(const Schedule_state<Time>& s, bool conservative, bool use_job_finish_times = false, int budget = 1)
 			{
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
 				// if we do not use a conservative merge, try to merge with up to 'budget' states if possible.
 				int merge_budget = conservative ? 1 : budget;
 
 				State_ref last_state_merged;
 				bool result = false;
-				for ( auto it = states.begin(); it != states.end();)
+				for (auto it = states.begin(); it != states.end();)
 				{
 					State_ref state = *it;
 					if (result == false)
@@ -1080,7 +1275,7 @@ namespace NP {
 				}
 
 				if (conservative)
-					return result ? 1:0;
+					return result ? 1 : 0;
 				else
 					return (budget - merge_budget);
 			}
@@ -1110,11 +1305,11 @@ namespace NP {
 				const Job_set& scheduled_jobs)
 			{
 				ready_successor_jobs.reserve(from.ready_successor_jobs.size() + successors_of[j].size());
-				
+
 				// add all jobs that were ready and were not the last job dispatched
 				for (const Job<Time>* rj : from.ready_successor_jobs)
 				{
-					if ( rj->get_job_index() != j )
+					if (rj->get_job_index() != j)
 						ready_successor_jobs.push_back(rj);
 				}
 
@@ -1144,7 +1339,7 @@ namespace NP {
 				jobs_with_pending_succ.reserve(from.jobs_with_pending_succ.size() + 1);
 				bool added_j = successors_of[j].empty(); // we only need to add j if it has successors
 				for (Job_index job : from.jobs_with_pending_succ)
-				{					
+				{
 					if (!added_j && job > j)
 					{
 						jobs_with_pending_succ.push_back(j);

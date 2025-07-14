@@ -124,6 +124,13 @@ namespace NP {
 		// Should we write where we are in the analysis?
 		bool verbose;
 
+#ifdef CONFIG_PARALLEL
+		// Parallel execution options
+		bool parallel_enabled = true;
+		unsigned int num_threads = 0;  // 0 = auto-detect
+		unsigned int min_nodes_per_thread = 4;  // Minimum nodes per thread for load balancing
+#endif
+
 		Analysis_options()
 		: timeout(0)
 		, max_depth(0)
@@ -133,6 +140,11 @@ namespace NP {
 		, merge_use_job_finish_times(false)
 		, merge_depth(1)
 		, verbose(false)
+#ifdef CONFIG_PARALLEL
+		, parallel_enabled(true)
+		, num_threads(0)
+		, min_nodes_per_thread(4)
+#endif
 		{
 		}
 	};
