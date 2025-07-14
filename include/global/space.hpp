@@ -163,29 +163,17 @@ namespace NP {
 			//currently unused, only required to compile nptest.cpp correctly
 			unsigned long number_of_nodes() const
 			{
-#ifdef CONFIG_PARALLEL
-				return parallel_enabled ? static_cast<unsigned long>(num_nodes.load(std::memory_order_relaxed)) : num_nodes;
-#else
 				return num_nodes;
-#endif
 			}
 
 			unsigned long number_of_states() const
 			{
-#ifdef CONFIG_PARALLEL
-				return parallel_enabled ? static_cast<unsigned long>(num_states.load(std::memory_order_relaxed)) : num_states;
-#else
 				return num_states;
-#endif
 			}
 
 			unsigned long number_of_edges() const
 			{
-#ifdef CONFIG_PARALLEL
-				return parallel_enabled ? static_cast<unsigned long>(num_edges.load(std::memory_order_relaxed)) : num_edges;
-#else
 				return num_edges;
-#endif
 			}
 
 			unsigned long max_exploration_front_width() const
@@ -912,12 +900,8 @@ namespace NP {
 					std::cout << "0%; 0s";
 					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
 				}
-
-#ifdef CONFIG_PARALLEL
-				int last_num_states = parallel_enabled ? static_cast<unsigned long>(num_states.load(std::memory_order_relaxed)) : num_states;
-#else
+				
 				int last_num_states = num_states;
-#endif
 				make_initial_node();
 
 				while (current_job_count < state_space_data.num_jobs()) {
@@ -935,11 +919,7 @@ namespace NP {
 
 					// keep track of exploration front width (main thread only - no protection needed)
 					max_width = std::max(max_width, n);
-#ifdef CONFIG_PARALLEL
-					int current_states = parallel_enabled ? static_cast<unsigned long>(num_states.load(std::memory_order_relaxed)) : num_states;
-#else
 					int current_states = num_states;
-#endif
 					width[current_job_count] = { n, current_states - last_num_states };
 					last_num_states = current_states;
 
