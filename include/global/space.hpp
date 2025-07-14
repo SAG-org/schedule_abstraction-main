@@ -125,10 +125,10 @@ namespace NP {
 			}
 
 			Interval<Time> get_finish_times(Job_index j) const
-				{
+			{
 #ifdef CONFIG_PARALLEL
 				if (parallel_enabled) {
-					std::lock_guard<std::mutex> lock(rta_mutex);
+					std::lock_guard<std::mutex> lock(*rta_mutexes[j]);
 					if (rta[j].valid) {
 						return rta[j].rt;
 					}
@@ -162,7 +162,7 @@ namespace NP {
 
 			//currently unused, only required to compile nptest.cpp correctly
 			unsigned long number_of_nodes() const
-				{
+			{
 #ifdef CONFIG_PARALLEL
 				return parallel_enabled ? num_nodes.load() : num_nodes;
 #else
@@ -171,7 +171,7 @@ namespace NP {
 			}
 
 			unsigned long number_of_states() const
-				{
+			{
 #ifdef CONFIG_PARALLEL
 				return parallel_enabled ? num_states.load() : num_states;
 #else
@@ -180,7 +180,7 @@ namespace NP {
 			}
 
 			unsigned long number_of_edges() const
-				{
+			{
 #ifdef CONFIG_PARALLEL
 				return parallel_enabled ? num_edges.load() : num_edges;
 #else
@@ -272,11 +272,7 @@ namespace NP {
 #ifdef CONFIG_PARALLEL
 			// Thread-safe statistics and control
 			std::atomic<unsigned long> num_nodes, num_states, num_edges;
-			mutable std::mutex rta_mutex;
-			mutable std::mutex abort_mutex;
-			mutable std::mutex node_creation_mutex;
-			// Thread-safe access to nodes_storage
-			mutable tbb::spin_rw_mutex nodes_storage_mutex;
+			mutable std::vector<std::unique_ptr<std::mutex>> rta_mutexes;
 			bool parallel_enabled;
 			unsigned int num_threads;
 			
@@ -337,6 +333,9 @@ namespace NP {
 				, max_width(0)
 				, width(jobs.size(), { 0,0 })
 				, rta(jobs.size())
+#ifdef CONFIG_PARALLEL
+				, rta_mutexes(jobs.size())
+#endif
 				, current_job_count(0)
 				, num_cpus(cores_initial_state.size())
 				, cores_initial_state(cores_initial_state)
@@ -357,6 +356,10 @@ namespace NP {
 					}
 					task_arena_->initialize();
 				}
+				// Initialize per-job mutexes
+				for (size_t i = 0; i < rta_mutexes.size(); ++i) {
+					rta_mutexes[i] = std::make_unique<std::mutex>();
+				}
 #endif
 			}
 
@@ -374,25 +377,6 @@ namespace NP {
 					num_edges.fetch_add(1, std::memory_order_relaxed);
 				} else {
 					num_edges++;
-				}
-			}
-			
-			bool check_abort_safe()
-			{
-				if (parallel_enabled) {
-					std::lock_guard<std::mutex> lock(abort_mutex);
-					return aborted;
-				}
-				return aborted;
-			}
-			
-			void set_abort_safe(bool value)
-			{
-				if (parallel_enabled) {
-					std::lock_guard<std::mutex> lock(abort_mutex);
-					aborted = value;
-				} else {
-					aborted = value;
 				}
 			}
 			
@@ -426,16 +410,6 @@ namespace NP {
 			void count_edge_safe()
 			{
 				num_edges++;
-			}
-			
-			bool check_abort_safe()
-			{
-				return aborted;
-			}
-			
-			void set_abort_safe(bool value)
-			{
-				aborted = value;
 			}
 			
 			void increment_nodes_safe()
@@ -480,7 +454,7 @@ namespace NP {
 					observed_deadline_miss = true;
 
 					if (early_exit)
-						set_abort_safe(true);
+						aborted = true;
 				}
 			}
 
@@ -488,16 +462,14 @@ namespace NP {
 			{
 #ifdef CONFIG_PARALLEL
 				if (parallel_enabled) {
-					std::lock_guard<std::mutex> lock(rta_mutex);
-					Response_times& r = rta;
-					update_finish_times(r, j, range);
+					Job_index j_idx = j.get_job_index();
+					std::lock_guard<std::mutex> lock(*rta_mutexes[j_idx]);
+					update_finish_times(rta, j, range);
 				} else {
-					Response_times& r = rta;
-					update_finish_times(r, j, range);
+					update_finish_times(rta, j, range);
 				}
 #else
-				Response_times& r = rta;
-				update_finish_times(r, j, range);
+				update_finish_times(rta, j, range);
 #endif
 			}
 
@@ -598,7 +570,7 @@ namespace NP {
 			void check_cpu_timeout()
 			{
 				if (timeout && get_cpu_time() > timeout) {
-					set_abort_safe(true);
+					aborted = true;
 					timed_out = true;
 				}
 			}
@@ -607,7 +579,7 @@ namespace NP {
 			{
 				long mem = mem_consumption;
 				if (max_mem && mem > max_mem) {
-					set_abort_safe(true);
+					aborted = true;
 					mem_out = true;
 				}
 				return mem;
@@ -616,7 +588,7 @@ namespace NP {
 			void check_depth_abort()
 			{
 				if (max_depth && current_job_count > max_depth)
-					set_abort_safe(true);
+					aborted = true;
 			}
 
 			bool unfinished(const Node& n, const Job<Time>& j) const
@@ -645,7 +617,7 @@ namespace NP {
 							// if we stop at the first deadline miss, abort and create node in the graph for explanation purposes
 							if (early_exit)
 							{
-								set_abort_safe(true);
+								aborted = true;
 								// create a dummy node for explanation purposes
 								auto frange = new_n.get_last_state()->core_availability(pmin) + j.get_cost(pmin);
 								Node_ref next =
@@ -920,7 +892,7 @@ namespace NP {
 				if (!found_one && !all_jobs_scheduled(*n)) {
 					// out of options and we didn't schedule all jobs
 					observed_deadline_miss = true;
-					set_abort_safe(true);
+					aborted = true;
 				}
 			}
 
@@ -957,7 +929,7 @@ namespace NP {
 #endif
 					if (n == 0)
 					{
-						set_abort_safe(true);
+						aborted = true;
 						break;
 					}
 
@@ -988,7 +960,7 @@ namespace NP {
 
 					check_depth_abort();
 					check_cpu_timeout();
-					if (check_abort_safe())
+					if (aborted)
 						break;
 
 #ifdef CONFIG_PARALLEL
@@ -999,11 +971,11 @@ namespace NP {
 								[&](const tbb::blocked_range<size_t>& range) {
 									Node_ref node;
 									while (exploration_front.try_pop(node)) {
-										if (check_abort_safe()) break;
+										if (aborted) break;
 										
 										explore(node);
 										
-										if (check_abort_safe()) break;
+										if (aborted) break;
 
 										// Clean up nodes that are no longer referenced
 										if (node.unique()) {
@@ -1022,7 +994,7 @@ namespace NP {
 						while (exploration_front.try_pop(node)) {
 							explore(node);
 							check_cpu_timeout();
-							if (check_abort_safe())
+							if (aborted)
 								break;
 
 							if (node.unique()) {
@@ -1039,7 +1011,7 @@ namespace NP {
 					for (const Node_ref& node : exploration_front) {
 						explore(node);
 						check_cpu_timeout();
-						if (check_abort_safe())
+						if (aborted)
 							break;
 
 						// If the node is not refered to anymore, we can reuse the node and state objects for other states.
