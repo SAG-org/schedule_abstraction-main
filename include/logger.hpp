@@ -1,7 +1,7 @@
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
-#include "global\state.hpp"
+#include "global/state.hpp"
 
 #include <deque>
 #include <memory>
