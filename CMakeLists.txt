@@ -5,7 +5,7 @@ project(NP_schedulabiliy_test VERSION 3.1.12 LANGUAGES CXX)
 include_directories(include)
 include_directories(lib/include)
 
-option(PARALLEL_RUN "Enable parallel run" ON)  # Changed default to ON
+option(PARALLEL_RUN "Enable parallel run" OFF)
 option(USE_TBB_MALLOC "Use the Intel TBB scalable memory allocator" OFF)
 option(USE_JE_MALLOC "Use the Facebook jemalloc scalable memory allocator" OFF)
 option(COLLECT_SCHEDULE_GRAPHS "Enable the collection of schedule graphs (disables parallel)" OFF)
