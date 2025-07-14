@@ -30,6 +30,7 @@ namespace NP {
 
 		template<class Time> class Schedule_node;
 
+		// NOTE: Schedule_state is not thread-safe. Thread-safety must be enforced by callers.
 		template<class Time> class Schedule_state
 		{
 		private:
@@ -73,11 +74,6 @@ namespace NP {
 
 			// job_finish_times holds the finish times of all the jobs that still have an unscheduled successor
 			Job_finish_times job_finish_times;
-
-#ifdef CONFIG_PARALLEL
-			// Thread-safe synchronization for state modification
-			mutable tbb::spin_rw_mutex state_mutex;
-#endif
 
 		public:
 
@@ -126,10 +122,6 @@ namespace NP {
 				Time next_source_job_rel,
 				unsigned int ncores = 1)
 			{
-#ifdef CONFIG_PARALLEL
-				// Acquire read lock on source state during construction
-				tbb::spin_rw_mutex::scoped_lock from_lock(from.state_mutex, false);
-#endif
 				const Successors& successors_of = state_space_data.successors_suspensions;
 				const Predecessors& predecessors_of = state_space_data.predecessors_suspensions;
 				const Job_precedence_set& predecessors = state_space_data.predecessors_of(j);
@@ -157,9 +149,6 @@ namespace NP {
 			// initial state -- nothing yet has finished, nothing is running
 			void reset(const unsigned int num_processors, const State_space_data<Time>& state_space_data)
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, true); // write lock
-#endif
 				core_avail = Core_availability(num_processors, Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
@@ -168,9 +157,6 @@ namespace NP {
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, true); // write lock
-#endif
 				core_avail = Core_availability(proc_initial_state.size(), Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_disptach = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_disptach = state_space_data.get_earliest_certain_gang_source_job_release();
@@ -203,11 +189,6 @@ namespace NP {
 				Time next_source_job_rel,
 				unsigned int ncores = 1)
 			{
-#ifdef CONFIG_PARALLEL
-				// Acquire read lock on source state and write lock on this state
-				tbb::spin_rw_mutex::scoped_lock from_lock(from.state_mutex, false);
-				tbb::spin_rw_mutex::scoped_lock this_lock(state_mutex, true);
-#endif
 				const Successors& successors_of = state_space_data.successors_suspensions;
 				const Predecessors& predecessors_of = state_space_data.predecessors_suspensions;
 				const Job_precedence_set& predecessors = state_space_data.predecessors_of(j);
@@ -237,18 +218,11 @@ namespace NP {
 
 			const Core_availability& get_cores_availability() const
 			{
-#ifdef CONFIG_PARALLEL
-				// No lock needed for const access to immutable reference
-				// The caller should ensure proper synchronization if needed
-#endif
 				return core_avail;
 			}
 
 			Interval<Time> core_availability(unsigned long p = 1) const
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
-#endif
 				assert(core_avail.size() > 0);
 				assert(core_avail.size() >= p);
 				assert(p > 0);
@@ -257,17 +231,11 @@ namespace NP {
 
 			Time earliest_finish_time() const
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
-#endif
 				return core_avail[0].min();
 			}
 
 			bool get_finish_times(Job_index j, Interval<Time>& ftimes) const
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
-#endif
 				int offset = jft_find(j);
 				if (offset < job_finish_times.size() && job_finish_times[offset].first == j)
 				{
@@ -282,26 +250,16 @@ namespace NP {
 
 			Time next_certain_gang_source_job_disptach() const
 			{
-#ifdef CONFIG_PARALLEL
-				// Atomic read of primitive type - no lock needed
-#endif
 				return earliest_certain_gang_source_job_disptach;
 			}
 
 			Time next_certain_successor_jobs_disptach() const
 			{
-#ifdef CONFIG_PARALLEL
-				// Atomic read of primitive type - no lock needed
-#endif
 				return earliest_certain_successor_job_disptach;
 			}
 
 			const std::vector<Running_job>& get_cert_running_jobs() const
 			{
-#ifdef CONFIG_PARALLEL
-				// No lock needed for const access to immutable reference
-				// The caller should ensure proper synchronization if needed
-#endif
 				return certain_jobs;
 			}
 
@@ -313,9 +271,6 @@ namespace NP {
 			// of other are subintervals of this. Otherwise, `other_in_this` is set to false.
 			bool core_avail_overlap(const Core_availability& other, bool conservative, bool& other_in_this) const
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
-#endif
 				assert(core_avail.size() == other.size());
 				other_in_this = false;
 				// Conservative means that all the availability intervals of one state must be within 
@@ -352,28 +307,20 @@ namespace NP {
 			// check if 'other' state can merge with this state
 			bool can_merge_with(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times = false) const
 			{
-#ifdef CONFIG_PARALLEL
-				// Order locks to prevent deadlock - lock by address order
-				if (this < &other) {
-					tbb::spin_rw_mutex::scoped_lock lock1(state_mutex, false);
-					tbb::spin_rw_mutex::scoped_lock lock2(other.state_mutex, false);
-					return can_merge_with_impl(other, conservative, use_job_finish_times);
+				bool other_in_this;
+				if (core_avail_overlap(other.core_avail, conservative, other_in_this))
+				{
+					if (use_job_finish_times)
+						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
+					else
+						return true;
 				}
-				else {
-					tbb::spin_rw_mutex::scoped_lock lock1(other.state_mutex, false);
-					tbb::spin_rw_mutex::scoped_lock lock2(state_mutex, false);
-					return can_merge_with_impl(other, conservative, use_job_finish_times);
-				}
-#else
-				return can_merge_with_impl(other, conservative, use_job_finish_times);
-#endif
+				else
+					return false;
 			}
 
 			bool can_merge_with(const Core_availability& cav, const Job_finish_times& jft, bool conservative, bool use_job_finish_times = false) const
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(state_mutex, false); // read lock
-#endif
 				if (core_avail_overlap(cav, conservative))
 				{
 					if (use_job_finish_times)
@@ -388,21 +335,13 @@ namespace NP {
 			// first check if 'other' state can merge with this state, then, if yes, merge 'other' with this state.
 			bool try_to_merge(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times = false)
 			{
-#ifdef CONFIG_PARALLEL
-				// Order locks to prevent deadlock - lock by address order
-				if (this < &other) {
-					tbb::spin_rw_mutex::scoped_lock lock1(state_mutex, true); // write lock on this
-					tbb::spin_rw_mutex::scoped_lock lock2(other.state_mutex, false); // read lock on other
-					return try_to_merge_impl(other, conservative, use_job_finish_times);
-				}
-				else {
-					tbb::spin_rw_mutex::scoped_lock lock1(other.state_mutex, false); // read lock on other
-					tbb::spin_rw_mutex::scoped_lock lock2(state_mutex, true); // write lock on this
-					return try_to_merge_impl(other, conservative, use_job_finish_times);
-				}
-#else
-				return try_to_merge_impl(other, conservative, use_job_finish_times);
-#endif
+				if (!can_merge_with(other, conservative, use_job_finish_times))
+					return false;
+
+				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
+
+				DM("+++ merged " << other << " into " << *this << std::endl);
+				return true;
 			}
 
 			void merge(
@@ -411,10 +350,6 @@ namespace NP {
 				const std::vector<Running_job>& cert_j,
 				Time ecsj_ready_time)
 			{
-#ifdef CONFIG_PARALLEL
-				// This is called from try_to_merge which already holds the lock
-				// No additional locking needed
-#endif
 				for (int i = 0; i < core_avail.size(); i++)
 					core_avail[i] |= cav[i];
 
@@ -454,9 +389,6 @@ namespace NP {
 			friend std::ostream& operator<< (std::ostream& stream,
 				const Schedule_state<Time>& s)
 			{
-#ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(s.state_mutex, false); // read lock
-#endif
 				stream << "Global::State(";
 				for (const auto& a : s.core_avail)
 					stream << "[" << a.from() << ", " << a.until() << "] ";
@@ -469,96 +401,6 @@ namespace NP {
 			}
 
 		private:
-
-#ifdef CONFIG_PARALLEL
-			// Thread-safe implementation methods (called with locks already held)
-			bool can_merge_with_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times) const
-			{
-				bool other_in_this;
-				// Call the internal version that doesn't acquire locks since we already hold them
-				if (core_avail_overlap_impl(other.core_avail, conservative, other_in_this))
-				{
-					if (use_job_finish_times)
-						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
-					else
-						return true;
-				}
-				else
-					return false;
-			}
-
-			bool try_to_merge_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times)
-			{
-				if (!can_merge_with_impl(other, conservative, use_job_finish_times))
-					return false;
-
-				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
-
-				DM("+++ merged " << other << " into " << *this << std::endl);
-				return true;
-			}
-
-			// Internal implementation that doesn't acquire locks (assumes locks are already held)
-			bool core_avail_overlap_impl(const Core_availability& other, bool conservative, bool& other_in_this) const
-			{
-				assert(core_avail.size() == other.size());
-				other_in_this = false;
-				// Conservative means that all the availability intervals of one state must be within 
-				// the interval of the other state.
-				// If conservative is false, the a simple overlap or contiguity between inverals is enough
-				if (conservative) {
-					bool overlap = true;
-					// check if all availability intervals of other are within the intervals of this
-					for (int i = 0; i < core_avail.size(); i++) {
-						if (!core_avail[i].contains(other[i])) {
-							overlap = false;
-							break;
-						}
-					}
-					if (overlap == true) {
-						other_in_this = true;
-						return true;
-					}
-					// check if all availability intervals of this are within the intervals of other
-					for (int i = 0; i < core_avail.size(); i++) {
-						if (!other[i].contains(core_avail[i])) {
-							return false;;
-						}
-					}
-				}
-				else {
-					for (int i = 0; i < core_avail.size(); i++)
-						if (!core_avail[i].intersects(other[i]))
-							return false;
-				}
-				return true;
-			}
-#else
-			bool can_merge_with_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times) const
-			{
-				bool other_in_this;
-				if (core_avail_overlap(other.core_avail, conservative, other_in_this))
-				{
-					if (use_job_finish_times)
-						return check_finish_times_overlap(other.job_finish_times, conservative, other_in_this);
-					else
-						return true;
-				}
-				else
-					return false;
-			}
-
-			bool try_to_merge_impl(const Schedule_state<Time>& other, bool conservative, bool use_job_finish_times)
-			{
-				if (!can_merge_with_impl(other, conservative, use_job_finish_times))
-					return false;
-
-				merge(other.core_avail, other.job_finish_times, other.certain_jobs, other.earliest_certain_successor_job_disptach);
-
-				DM("+++ merged " << other << " into " << *this << std::endl);
-				return true;
-			}
-#endif
 
 			// update the list of jobs that are certainly running in the current system state 
 			// and returns the number of predecessors of job `j` that were certainly running on cores in the previous system state
