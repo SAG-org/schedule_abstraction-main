@@ -616,10 +616,28 @@ namespace NP {
 				auto eft = finish_times.min();
 				auto lft = finish_times.max();
 
+				// Stack allocation threshold - use stack for small core counts to avoid heap allocations
+				constexpr int STACK_ALLOCATION_THRESHOLD = 64;
+				
+				Time ca_stack[STACK_ALLOCATION_THRESHOLD];
+				Time pa_stack[STACK_ALLOCATION_THRESHOLD];
+				
+				Time* ca;
+				Time* pa;
+				std::unique_ptr<Time[]> ca_heap;
+				std::unique_ptr<Time[]> pa_heap;
+				
+				// Use stack allocation for small arrays, heap allocation for larger ones
+				if (n_cores <= STACK_ALLOCATION_THRESHOLD) {
+					ca = ca_stack;
+					pa = pa_stack;
+				} else {
+					ca_heap = std::make_unique<Time[]>(n_cores);
+					pa_heap = std::make_unique<Time[]>(n_cores);
+					ca = ca_heap.get();
+					pa = pa_heap.get();
+				}
 
-				// compute the cores availability intervals
-				Time* ca = new Time[n_cores];
-				Time* pa = new Time[n_cores];
 				unsigned int ca_idx = 0, pa_idx = 0;
 
 				// Keep pa and ca sorted, by adding the value at the correct place.
@@ -674,8 +692,6 @@ namespace NP {
 					DM(i << " -> " << pa[i] << ":" << ca[i] << std::endl);
 					core_avail.emplace_back(pa[i], ca[i]);
 				}
-				delete[] pa;
-				delete[] ca;
 			}
 
 			// finds the earliest time a gang source job (i.e., a job without predecessors that requires more than one core to start executing)

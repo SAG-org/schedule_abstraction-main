@@ -164,7 +164,7 @@ namespace NP {
 			unsigned long number_of_nodes() const
 			{
 #ifdef CONFIG_PARALLEL
-				return parallel_enabled ? num_nodes.load() : num_nodes;
+				return parallel_enabled ? num_nodes.load(std::memory_order_relaxed) : num_nodes;
 #else
 				return num_nodes;
 #endif
@@ -173,7 +173,7 @@ namespace NP {
 			unsigned long number_of_states() const
 			{
 #ifdef CONFIG_PARALLEL
-				return parallel_enabled ? num_states.load() : num_states;
+				return parallel_enabled ? num_states.load(std::memory_order_relaxed) : num_states;
 #else
 				return num_states;
 #endif
@@ -182,7 +182,7 @@ namespace NP {
 			unsigned long number_of_edges() const
 			{
 #ifdef CONFIG_PARALLEL
-				return parallel_enabled ? num_edges.load() : num_edges;
+				return parallel_enabled ? num_edges.load(std::memory_order_relaxed) : num_edges;
 #else
 				return num_edges;
 #endif
@@ -914,7 +914,7 @@ namespace NP {
 				}
 
 #ifdef CONFIG_PARALLEL
-				int last_num_states = parallel_enabled ? num_states.load() : num_states;
+				int last_num_states = parallel_enabled ? num_states.load(std::memory_order_relaxed) : num_states;
 #else
 				int last_num_states = num_states;
 #endif
@@ -936,7 +936,7 @@ namespace NP {
 					// keep track of exploration front width (main thread only - no protection needed)
 					max_width = std::max(max_width, n);
 #ifdef CONFIG_PARALLEL
-					int current_states = parallel_enabled ? num_states.load() : num_states;
+					int current_states = parallel_enabled ? num_states.load(std::memory_order_relaxed) : num_states;
 #else
 					int current_states = num_states;
 #endif
