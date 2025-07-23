@@ -34,6 +34,10 @@
 
 #include "logger.hpp"
 
+#ifdef CONFIG_PRUNING
+#include "global/secateur.hpp"
+#endif
+
 namespace NP {
 
 	namespace Global {
@@ -86,6 +90,10 @@ namespace NP {
 					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
+#endif
+#ifdef CONFIG_PRUNING
+					, opts.pruning_active
+					, opts.pruning_cond
 #endif
 				);
 				s->be_naive = opts.be_naive;
@@ -227,15 +235,8 @@ namespace NP {
 				}
 			};
 			typedef std::vector<Response_time_item> Response_times;
-
-			// Similar to uni/space.hpp, make rta a 
-
 			Response_times rta;
 
-			bool verbose;
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			bool log = false; // whether to log the schedule graph
-#endif
 			bool aborted;
 			bool timed_out;
 			bool mem_out;
@@ -297,8 +298,12 @@ namespace NP {
 				, Log_options<Time> log_opts = Log_options<Time>()
 #endif
 #ifdef CONFIG_PARALLEL
-				, bool parallel_enabled = false,
-				unsigned int num_threads = 0
+				, bool parallel_enabled = false
+				, unsigned int num_threads = 0
+#endif
+#ifdef CONFIG_PRUNING
+				, bool pruning_active = false
+				, const Pruning_condition& pruning_cond = Pruning_condition()
 #endif
 			)	: state_space_data(jobs, edges, aborts, num_cpus)
 				, aborted(false)
@@ -333,6 +338,10 @@ namespace NP {
 				, log(log_opts.log)
 				, logger(log_opts.log_cond)
 #endif
+#ifdef CONFIG_PRUNING
+				, pruning_active(pruning_active)
+				, secateur(pruning_cond)
+#endif
 			{
 #ifdef CONFIG_PARALLEL
 				// Initialize TBB task arena with specified thread count 
@@ -352,9 +361,15 @@ namespace NP {
 			}
 
 		private:
+			bool verbose;
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			SAG_logger<Time> logger; // { { 0, Time_model::constants<Time>::infinity() }, { 0, 10000 }, { 7 }, {}, false };
+			bool log = false; // whether to log the schedule graph
+			SAG_logger<Time> logger; 
+#endif
+#ifdef CONFIG_PRUNING
+			bool pruning_active = false; // whether to use pruning
+			Secateur<Time> secateur; // pruning tool
 #endif
 
 #ifdef CONFIG_PARALLEL
@@ -812,6 +827,7 @@ namespace NP {
 			void explore(const Node_ref& n)
 			{
 				bool found_one = false;
+				bool pruned = false;
 
 				DM("---- global:explore(node)" << n->finish_range() << std::endl);
 
@@ -851,6 +867,14 @@ namespace NP {
 					// then j will never be the next job dispached by the scheduler
 					if (t_high_wos <= j.earliest_arrival())
 						continue;
+
+#ifdef CONFIG_PRUNING
+					// if pruning is active, check whether the job is eligible for dispatching
+					if (pruning_active && secateur.prune_branch(j, *n)) {
+						pruned = true;
+						continue;
+					}
+#endif
 					found_one |= dispatch(n, j, upbnd_t_wc, t_high_wos);
 				}
 				// part 2: check ready successor jobs (i.e., jobs with precedence constraints that are completed) that are potentially eligible
@@ -873,11 +897,20 @@ namespace NP {
 					// then j will never be the next job dispached by the scheduler
 					if (t_high_wos <= j.earliest_arrival())
 						continue;
+
+#ifdef CONFIG_PRUNING
+					// if pruning is active, check whether the job is eligible for dispatching
+					if (pruning_active && secateur.prune_branch(j, *n)) {
+						pruned = true;
+						continue;
+					}
+#endif
+
 					found_one |= dispatch(n, j, upbnd_t_wc, t_high_wos);
 				}
 
 				// check for a dead end
-				if (!found_one && !all_jobs_scheduled(*n)) {
+				if (!found_one && !pruned && !all_jobs_scheduled(*n)) {
 					// out of options and we didn't schedule all jobs
 					observed_deadline_miss = true;
 					aborted = true;

@@ -4,6 +4,9 @@
 #include "jobs.hpp"
 #include "precedence.hpp"
 #include "aborts.hpp"
+#ifdef CONFIG_PRUNING
+#include "pruning_cond.hpp"
+#endif
 
 namespace NP {
 
@@ -131,6 +134,12 @@ namespace NP {
 		unsigned int min_nodes_per_thread = 4;  // Minimum nodes per thread for load balancing
 #endif
 
+#ifdef CONFIG_PRUNING
+		// Pruning options
+		bool pruning_active = false;
+		Pruning_condition pruning_cond;
+#endif
+
 		Analysis_options()
 		: timeout(0)
 		, max_depth(0)
@@ -144,6 +153,10 @@ namespace NP {
 		, parallel_enabled(true)
 		, num_threads(0)
 		, min_nodes_per_thread(4)
+#endif
+#ifdef CONFIG_PRUNING
+		, pruning_active(false)
+		, pruning_cond()
 #endif
 		{
 		}

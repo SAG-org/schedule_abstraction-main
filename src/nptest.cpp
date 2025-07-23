@@ -26,6 +26,11 @@ static bool want_parallel = true;
 static unsigned int num_threads = 0;
 #endif
 
+#ifdef CONFIG_PRUNING
+static bool want_focus = false;
+static std::string focus_file;
+#endif
+
 static bool want_precedence = false;
 static std::string precedence_file;
 
@@ -114,6 +119,18 @@ static Analysis_result analyze(
 #ifdef CONFIG_PARALLEL
 	opts.parallel_enabled = want_parallel;
 	opts.num_threads = num_threads;
+#endif
+#ifdef CONFIG_PRUNING
+	// set pruning options if requested
+	if (want_focus && !focus_file.empty()) {
+		opts.pruning_active = true;
+		std::ifstream focus_in(focus_file);
+		if (!focus_in) {
+			std::cerr << "Error: could not open focus YAML file: " << focus_file << std::endl;
+			exit(1);
+		}
+		opts.pruning_cond = NP::parse_focused_expl_spec_yaml<Time>(focus_in, jobs);
+	}
 #endif
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 	NP::Global::Log_options<Time> log_opts;
@@ -483,6 +500,10 @@ int main(int argc, char** argv)
 		.set_default("0");
 #endif
 
+	parser.add_option("-f", "--focus").dest("focus_file")
+		.help("If 'USE_PRUNING' is set, allows to send a YAML file specifying what part of the state-space to focus on or prune during the exploration.")
+		.set_default("");
+
 	auto options = parser.parse_args(argc, argv);
 	//all the options that could have been entered above are processed below and appropriate variables
 	// are assigned their respective values.
@@ -604,6 +625,18 @@ int main(int argc, char** argv)
 		want_parallel = false;
 	}
 #endif
+#endif
+#ifdef CONFIG_PRUNING
+	want_focus = options.is_set_by_user("focus_file");
+	focus_file = (const std::string&)options.get("focus_file");
+#else
+	if(options.is_set_by_user("focus_file"))
+	{
+		std::cerr << "Error: Focused exploration support must be enabled "
+				  << "during compilation (CONFIG_PRUNING is not set)."
+				  << std::endl;
+		return 2;
+	}
 #endif
 
 	// this prints the header in the output on the console

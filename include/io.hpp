@@ -11,6 +11,9 @@
 #include "aborts.hpp"
 #include "yaml-cpp/yaml.h"
 #include "logger.hpp"
+#ifdef CONFIG_PRUNING
+#include "pruning_cond.hpp"
+#endif
 
 namespace NP {
 
@@ -554,6 +557,138 @@ namespace NP {
 		return logging_condition;
 	}
 
+#ifdef CONFIG_PRUNING
+    // Parse a Focused_expl_spec.yaml file and return a Pruning_condition
+    // The YAML file must be loaded from the input stream 'in'.
+    // The function receives the jobset (vector of Job<Time>) and returns a Pruning_condition.
+    template<class Time>
+    Pruning_condition parse_focused_expl_spec_yaml(std::istream& in, const std::vector<Job<Time>>& jobset)
+    {
+     // Parse YAML
+     YAML::Node config;
+     try {
+         in.clear();
+         in.seekg(0, std::ios::beg);
+         config = YAML::Load(in);
+     } catch (const YAML::Exception& e) {
+         std::cerr << "Error reading YAML file: " << e.what() << std::endl;
+         return Pruning_condition(jobset.size());
+     }
+
+	 Pruning_condition cond(jobset.size());
+
+     // Parse Focus::jobset and Focus::taskset
+     std::set<std::pair<unsigned long, unsigned long>> focus_jobset;
+     std::set<unsigned long> focus_taskset;
+     if (config["Focus"]) {
+         auto focus = config["Focus"];
+         if (focus["jobset"]) {
+             for (const auto& job : focus["jobset"]) {
+                 if (job.IsSequence() && job.size() == 2) {
+                     focus_jobset.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
+                 }
+					else {
+						std::cerr << "Error reading Focus::jobset. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+					}
+             }
+         }
+         if (focus["taskset"]) {
+             for (const auto& task : focus["taskset"]) {
+                 focus_taskset.insert(task.as<unsigned long>());
+             }
+         }
+     }
+
+     // Parse Prune::tasks and Prune::jobs
+     std::set<unsigned long> prune_tasks;
+     std::set<std::pair<unsigned long, unsigned long>> prune_jobs;
+     if (config["Prune"]) {
+         auto prune = config["Prune"];
+         if (prune["tasks"]) {
+             for (const auto& task : prune["tasks"]) {
+                 prune_tasks.insert(task.as<unsigned long>());
+             }
+         }
+         if (prune["jobs"]) {
+             for (const auto& job : prune["jobs"]) {
+                 if (job.IsSequence() && job.size() == 2) {
+                     prune_jobs.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
+                 }
+					else {
+						std::cerr << "Error reading Prune::jobs. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+					}
+             }
+         }
+     }
+
+     // Parse Prune::jobsets and add to cond.stop_job_sets
+     if (config["Prune"]) {
+         auto prune = config["Prune"];
+         if (prune["jobsets"]) {
+             for (const auto& jobset_node : prune["jobsets"]) {
+                 std::vector<Job_index> job_indices;
+                 // Each jobset_node should be a sequence of [TaskID, JobID] pairs
+                 if (jobset_node.IsSequence()) {
+                     for (const auto& job : jobset_node) {
+                         if (job.IsSequence() && job.size() == 2) {
+                             unsigned long task_id = job[0].as<unsigned long>();
+                             unsigned long job_id = job[1].as<unsigned long>();
+                             // Find the index of this job in jobset
+                             auto it = std::find_if(jobset.begin(), jobset.end(),
+                                 [&task_id, &job_id](const Job<Time>& j) {
+                                     return j.get_task_id() == task_id && j.get_job_id() == job_id;
+                                 });
+                             if (it != jobset.end()) {
+                                 Job_index idx = it->get_job_index();
+                                 job_indices.push_back(idx);
+                             } else {
+                                 std::cerr << "Warning: Prune::jobsets contains job [TaskID=" << task_id << ", JobID=" << job_id << "] not found in jobset." << std::endl;
+                             }
+                         } else {
+                             std::cerr << "Error reading Prune::jobsets. Expected a sequence of [TaskID, JobID]. This entry is going to be ignored." << std::endl;
+                         }
+                     }
+                     // Add the set to stop_job_sets for every job in the set
+                     for (const auto& idx : job_indices) {
+                         cond.stop_job_sets.emplace(idx, job_indices);
+                     }
+                 } else {
+                     std::cerr << "Error reading Prune::jobsets. Expected a sequence of job sets. This entry is going to be ignored." << std::endl;
+                 }
+             }
+         }
+     }
+
+	 // populate cond.prune_jobs based on prune_tasks, prune_jobs, focus_jobset, and focus_taskset
+     for (size_t idx = 0; idx < jobset.size(); ++idx) {
+         const auto& job = jobset[idx];
+         unsigned long task_id = job.get_task_id();
+         unsigned long job_id = job.get_job_id();
+         // Prune if job is in Prune::jobs
+         if (prune_jobs.count({task_id, job_id})) {
+             cond.prune_jobs.add(idx);
+             continue;
+         }
+         // Prune if job's task is in Prune::tasks
+         if (prune_tasks.count(task_id)) {
+             cond.prune_jobs.add(idx);
+             continue;
+         }
+         // Prune if Focus::jobset is not empty and job is not in it
+         if (!focus_jobset.empty() && !focus_jobset.count({task_id, job_id})) {
+             cond.prune_jobs.add(idx);
+             continue;
+         }
+         // Prune if Focus::taskset is not empty and job's task is not in it
+         if (!focus_taskset.empty() && !focus_taskset.count(task_id)) {
+             cond.prune_jobs.add(idx);
+             continue;
+         }
+     }
+
+     return cond;
+    }
+#endif
 }
 
 #endif

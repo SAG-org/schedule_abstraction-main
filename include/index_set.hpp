@@ -14,6 +14,15 @@ namespace NP {
 			// new empty job set
 			Index_set() : the_set() {}
 
+			// new empty job set of a specific size
+			Index_set(size_t s) : the_set() {
+				the_set.reserve(s / 64 + 1);
+			}
+
+			Index_set(const Index_set& origin) {
+				the_set = origin.the_set;
+			}
+
 			// derive a new set by "cloning" an existing set and adding an index
 			Index_set(const Index_set& from, std::size_t idx)
 					: the_set(std::max(from.the_set.size(), (idx / 64) + 1))
@@ -148,9 +157,6 @@ namespace NP {
 				std::size_t bit_index = idx % 64;
 				return the_set[byte_index] & (((uint64_t)1) << bit_index);
 			}
-
-			// no accidental copies
-			Index_set(const Index_set& origin) = delete;
 		};
 }
 
