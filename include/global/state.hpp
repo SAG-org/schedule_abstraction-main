@@ -34,7 +34,7 @@ namespace NP {
 		template<class Time> class Schedule_state
 		{
 		private:
-
+			typedef typename State_space_data<Time>::Workload Workload;
 			typedef std::vector<std::pair<Job_index, Interval<Time>>> Job_finish_times;
 			typedef std::vector<Interval<Time>> Core_availability;
 			typedef std::vector<std::pair<const Job<Time>*, Interval<Time>>> Susp_list;
@@ -386,18 +386,27 @@ namespace NP {
 				DM("+++ merged (cav,jft,cert_t) into " << *this << std::endl);
 			}
 
-			friend std::ostream& operator<< (std::ostream& stream,
-				const Schedule_state<Time>& s)
+			// output the state in CSV format
+			void export_state (std::ostream& stream, const Workload& jobs)
 			{
-				stream << "Global::State(";
-				for (const auto& a : s.core_avail)
-					stream << "[" << a.from() << ", " << a.until() << "] ";
-				stream << "(";
-				for (const auto& rj : s.certain_jobs)
-					stream << rj.idx << "";
-				stream << ") " << ")";
-				stream << " @ " << &s;
-				return stream;
+				stream << "=====State=====\n"
+					<< "Cores availability\n";
+				// Core availability intervals
+				for (const auto& a : core_avail)
+					stream << "[" << a.min() << "," << a.max() << "]\n";
+
+				stream << "Certainly running jobs: [<task_id>,<job_id>]:[<par_min>,<par_max>],[<ft_min>,<ft_max>]\n";
+				// Running jobs: <task_id>,<job_id>,<par_min>,<par_max>,<ft_min>,<ft_max>\n
+				for (const auto& rj : certain_jobs) {
+					const auto j = jobs[rj.idx];
+					stream << "[" << j.get_task_id() << "," << j.get_job_id() << "]:[" << rj.parallelism.min() << "," << rj.parallelism.max() << "],[" << rj.finish_time.min() << "," << rj.finish_time.max() << "]\n";
+				}
+				stream << "Finish times predecessors: [<task_id>,<job_id>]:[<ft_min>,<ft_max>]\n";
+				// Jobs with pending successors: <job_id>,<ft_min>,<ft_max>\n
+				for (const auto& jft : job_finish_times) {
+					const auto j = jobs[jft.first];
+					stream << "[" << j.get_task_id() << "," << j.get_job_id() << "]:[" << jft.second.min() << "," << jft.second.max() << "]\n";
+				}
 			}
 
 		private:
@@ -717,7 +726,7 @@ namespace NP {
 		template<class Time> class Schedule_node
 		{
 		private:
-
+			typedef typename State_space_data<Time>::Workload Workload;
 			typedef Schedule_state<Time> State;
 			typedef std::shared_ptr<State> State_ref;
 			typedef typename std::vector<Interval<Time>> Core_availability;
@@ -1022,15 +1031,40 @@ namespace NP {
 				states.insert(s);
 			}
 
-			friend std::ostream& operator<< (std::ostream& stream,
-				const Schedule_node<Time>& n)
+			// export the node information to the stream
+			void export_node (std::ostream& stream, const Workload& jobs)
 			{
 #ifdef CONFIG_PARALLEL
-				tbb::spin_rw_mutex::scoped_lock lock(n.states_mutex, false); // read lock
+                tbb::spin_rw_mutex::scoped_lock lock(n.states_mutex, false); // read lock
 #endif
-				stream << "Node(" << n.states.size() << ")";
-				return stream;
-			}
+				stream << "=====Node=====\n"
+					<< "Ready successors: [[<task_id>,<job_id>], ...]\n"
+					<< "[";
+                // Ready successor jobs: [<task_id>,<job_id>]
+				int i = 0;
+                for (const auto* job : ready_successor_jobs) {
+                    stream << "[" << job->get_task_id() << "," << job->get_job_id() << "]";
+					++i;
+					if (i < ready_successor_jobs.size()) 
+						stream << ",";
+                }
+				stream << "]\n"
+					<< "Scheduled jobs: [[<task_id>,<job_id>], ...]\n"
+					<< "[";
+                // Scheduled jobs: <task_id>,<job_id>\n
+                // We need to iterate over n.scheduled_jobs.
+				i = 0;
+				for (int idx = 0; idx < scheduled_jobs.size(); ++idx) {
+					if (scheduled_jobs.contains(idx)) {
+						const auto& j = jobs[idx];
+						stream << "[" << j.get_task_id() << "," << j.get_job_id() << "]";
+						i++;
+						if (i < num_jobs_scheduled) 
+							stream << ",";
+					}
+                }
+				stream << "]\n";
+            }
 
 			//return the number of states in the node
 			int states_size() const

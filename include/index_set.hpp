@@ -98,11 +98,12 @@ namespace NP {
 
 			std::size_t size() const
 			{
-				std::size_t count = 0;
+				/*std::size_t count = 0;
 				for (std::size_t i = 0; i < the_set.size() * 64; ++i)
 					if (contains(i))
 						count++;
-				return count;
+				return count;*/
+				return  the_set.size() * 64;
 			}
 
 			void add(std::size_t idx)

@@ -54,6 +54,7 @@ static unsigned int max_depth = 0;
 
 static bool want_rta_file;
 static bool want_width_file;
+static bool want_deadline_miss_info;
 
 static bool continue_after_dl_miss = false;
 
@@ -68,6 +69,7 @@ struct Analysis_result {
 #endif
 	std::string response_times_csv;
 	std::string width_evolution_csv;
+	std::string deadline_mis_info;
 };
 
 
@@ -155,7 +157,6 @@ static Analysis_result analyze(
 		space->print_dot_file(graph, log_print_config);
 #endif
 	auto rta = std::ostringstream();
-
 	if (want_rta_file) {
 		rta << "Task ID, Job ID, BCCT, WCCT, BCRT, WCRT" << std::endl;
 		for (const auto& j : problem.jobs) {
@@ -185,6 +186,14 @@ static Analysis_result analyze(
 		}
 	}
 
+	auto deadline_miss_stream = std::ostringstream();
+	bool schedulable = space->is_schedulable();
+	if(want_deadline_miss_info && !schedulable) {
+		auto deadline_miss_state = space->get_deadline_miss_state();
+		deadline_miss_state.first->export_node(deadline_miss_stream, jobs);
+		deadline_miss_state.second->export_state(deadline_miss_stream, jobs);
+	}
+
 	Analysis_result results = Analysis_result{
 		space->is_schedulable(),
 		space->was_timed_out(),
@@ -199,7 +208,8 @@ static Analysis_result analyze(
 		graph.str(),
 #endif
 		rta.str(),
-		width_stream.str()
+		width_stream.str(),
+		deadline_miss_stream.str()
 	};
 	delete space;
 	return results;
@@ -334,6 +344,17 @@ static void process_file(const std::string& fname)
 					width_file_name.replace(p, std::string::npos, ".width.csv");
 					auto out = std::ofstream(width_file_name, std::ios::out);
 					out << result.width_evolution_csv;
+					out.close();
+				}
+			}
+
+			if (want_deadline_miss_info && !result.schedulable && !result.deadline_mis_info.empty()) {
+				std::string dl_miss_file_name = fname;
+				auto p = dl_miss_file_name.find_last_of(".");
+				if (p != std::string::npos) {
+					dl_miss_file_name.replace(p, std::string::npos, ".dl_miss.txt");
+					auto out = std::ofstream(dl_miss_file_name, std::ios::out);
+					out << result.deadline_mis_info;
 					out.close();
 				}
 			}
@@ -472,6 +493,10 @@ int main(int argc, char** argv)
 	      .action("store_const").set_const("1")
 	      .help("Reporting: store the best- and worst-case response times and store the evolution of the width of the graph (default: off)");
 
+	parser.add_option("--miss_info").dest("miss_info").set_default("0")
+		.action("store_const").set_const("1")
+		.help("Report information on the deadline miss state if a deadline miss occurs (default: off)");
+
 	parser.add_option("-c", "--continue-after-deadline-miss")
 	      .dest("go_on_after_dl").set_default("0")
 	      .action("store_const").set_const("1")
@@ -592,6 +617,7 @@ int main(int argc, char** argv)
 
 	want_rta_file = options.get("rta");
 	want_width_file = options.get("rta");
+	want_deadline_miss_info = options.get("miss_info");
 
 	want_verbose = options.get("verbose");
 

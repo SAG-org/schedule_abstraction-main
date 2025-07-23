@@ -50,10 +50,12 @@ namespace NP {
 			typedef typename Scheduling_problem<Time>::Workload Workload;
 			typedef typename Scheduling_problem<Time>::Precedence_constraints Precedence_constraints;
 			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
-			typedef Schedule_state<Time> State;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
 
 			typedef Schedule_node<Time> Node;
+			typedef std::shared_ptr<Node> Node_ref;
+			typedef Schedule_state<Time> State;
+			typedef std::shared_ptr<State> State_ref;
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			static State_space* explore(
@@ -168,6 +170,11 @@ namespace NP {
 				return mem_out;
 			}
 
+			const std::pair<Node_ref, State_ref> get_deadline_miss_state()
+			{
+				return {deadline_miss_node, deadline_miss_state};
+			}
+
 			//currently unused, only required to compile nptest.cpp correctly
 			unsigned long number_of_nodes() const
 			{
@@ -199,7 +206,6 @@ namespace NP {
 				return cpu_time;
 			}
 
-			typedef std::shared_ptr<Node> Node_ref;
 #ifdef CONFIG_PARALLEL
 			// Thread-safe concurrent queue for storing nodes during parallel execution
 			typedef tbb::concurrent_queue<Node_ref> Nodes;
@@ -211,7 +217,6 @@ namespace NP {
 		private:
 
 			typedef typename std::forward_list<Node_ref> Node_refs;
-			typedef std::shared_ptr<State> State_ref;
 			typedef typename std::forward_list<State_ref> State_refs;
 			
 #ifdef CONFIG_PARALLEL
@@ -242,6 +247,10 @@ namespace NP {
 			bool mem_out;
 			bool observed_deadline_miss;
 			bool early_exit;
+
+			// node and state where a deadline miss was observed
+			Node_ref deadline_miss_node;
+			State_ref deadline_miss_state;
 
 			const unsigned int max_depth;
 
@@ -309,6 +318,8 @@ namespace NP {
 				, aborted(false)
 				, timed_out(false)
 				, observed_deadline_miss(false)
+				, deadline_miss_state(nullptr)
+				, deadline_miss_node(nullptr)
 				, be_naive(false)		
 				, timeout(max_cpu_time)
 				, mem_out(false)
@@ -516,6 +527,10 @@ namespace NP {
 			{
 				// create a new state.
 				State_ref new_s = new_state(std::forward<Args>(args)...);
+#ifndef CONFIG_PARALLEL
+				if (observed_deadline_miss)
+					deadline_miss_state = new_s;
+#endif
 				// try to merge the new state with existing states in node n.
 				if (!(n.get_states()->empty())) {
 					int n_states_merged = n.merge_states(*new_s, merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
@@ -629,7 +644,8 @@ namespace NP {
 								State_ref next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
 								next->add_state(next_s);
 								increment_states_safe();
-
+								deadline_miss_state = next_s;
+								deadline_miss_node = next;
 								// update response times
 								update_finish_times(j, frange);
 								count_edge();
@@ -812,6 +828,13 @@ namespace NP {
 						}
 
 						count_edge();
+
+						if (observed_deadline_miss) {
+#ifndef CONFIG_PARALLEL
+							deadline_miss_node = next;
+#endif
+							return dispatched_one;
+						}
 					}
 				}
 
@@ -913,6 +936,8 @@ namespace NP {
 				if (!found_one && !pruned && !all_jobs_scheduled(*n)) {
 					// out of options and we didn't schedule all jobs
 					observed_deadline_miss = true;
+					deadline_miss_node = n;
+					deadline_miss_state = n->get_first_state();
 					aborted = true;
 				}
 			}
