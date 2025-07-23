@@ -1034,9 +1034,6 @@ namespace NP {
 			// export the node information to the stream
 			void export_node (std::ostream& stream, const Workload& jobs)
 			{
-#ifdef CONFIG_PARALLEL
-                tbb::spin_rw_mutex::scoped_lock lock(n.states_mutex, false); // read lock
-#endif
 				stream << "=====Node=====\n"
 					<< "Ready successors: [[<task_id>,<job_id>], ...]\n"
 					<< "[";
