@@ -552,12 +552,12 @@ namespace NP {
 				}
 			}
 
-			void release_state(const std::shared_ptr<State> s)
+			void release_state(const std::shared_ptr<State>& s)
 			{
 				state_pool.release(s);
 			}
 
-			void release_node(const std::shared_ptr<Node> n)
+			void release_node(const std::shared_ptr<Node>& n)
 			{
 				node_pool.release(n);
 			}
