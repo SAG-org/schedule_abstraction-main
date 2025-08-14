@@ -1,51 +1,50 @@
 #ifndef OBJECT_POOL
 #define OBJECT_POOL
 
+#include <memory>
+#include <deque>
+
+#ifdef CONFIG_PARALLEL
+#include <tbb/concurrent_queue.h>
+#endif
+
 template <typename T>
 class Object_pool {
 private:
 #ifdef CONFIG_PARALLEL
-	tbb::concurrent_queue<T*> pool;
+    tbb::concurrent_queue<std::shared_ptr<T>> pool;
 #else
-    std::deque<T*> pool;
+    std::deque<std::shared_ptr<T>> pool;
 #endif
+
 public:
     template <typename... Args>
-    T* acquire(Args&&... args) {
+    std::shared_ptr<T> acquire(Args&&... args) {
 #ifdef CONFIG_PARALLEL
-		T* obj;
-		if (!pool.try_pop(obj)) {
-			return new T(std::forward<Args>(args)...);
-		}
+        std::shared_ptr<T> obj;
+        if (pool.try_pop(obj)) {
+            obj->reset(std::forward<Args>(args)...); // Initialize the object
+            return obj;
+        }
+        return std::shared_ptr<T>(new T(std::forward<Args>(args)...));
 #else
         if (pool.empty()) {
-            return new T(std::forward<Args>(args)...);
+            return std::shared_ptr<T>(new T(std::forward<Args>(args)...));
         }
-        T* obj = pool.back();
+        std::shared_ptr<T> obj = pool.back();
         pool.pop_back();
-#endif
         obj->reset(std::forward<Args>(args)...); // Initialize the object
         return obj;
+#endif
     }
 
-    void release(T* obj) {
+    void release(const std::shared_ptr<T>& obj) {
+        if (!obj.unique())
+            return; // Do not release if the object is shared
 #ifdef CONFIG_PARALLEL
         pool.push(obj);
 #else
-        pool.push_back(obj);
-#endif
-    }
-
-    ~Object_pool() {
-#ifdef CONFIG_PARALLEL
-		T* obj;
-		while (pool.try_pop(obj)) {
-			delete obj;
-		}
-#else
-        for (T* obj : pool) {
-            delete obj;
-        }
+        pool.emplace_back(obj);
 #endif
     }
 };

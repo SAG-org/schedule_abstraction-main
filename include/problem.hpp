@@ -4,6 +4,9 @@
 #include "jobs.hpp"
 #include "precedence.hpp"
 #include "aborts.hpp"
+#ifdef CONFIG_PRUNING
+#include "pruning_cond.hpp"
+#endif
 
 namespace NP {
 
@@ -24,18 +27,28 @@ namespace NP {
 		Abort_actions aborts;
 
 		// ** Platform model:
-		// on how many (identical) processors are the jobs being
-		// dispatched (globally, in priority order)
-		unsigned int num_processors;
+		// initial state (availability intervals) of the identical processors 
+		// on which the jobs are being dispatched (globally, in priority order)
+		std::vector<Interval<Time>> processors_initial_state;
 
 		// Classic default setup: no abort actions
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 		                   unsigned int num_processors = 1)
-		: num_processors(num_processors)
-		, jobs(jobs)
+		: jobs(jobs)
 		, prec(prec)
+		, processors_initial_state(num_processors, Interval<Time>(0, 0))
 		{
 			assert(num_processors > 0);
+			validate_prec_cstrnts<Time>(this->prec, jobs);
+		}
+
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const std::vector<Interval<Time>>& proc_init_state)
+		: jobs(jobs)
+		, prec(prec)
+		, processors_initial_state(proc_init_state)
+		{
+			assert(processors_initial_state.size() > 0);
 			validate_prec_cstrnts<Time>(this->prec, jobs);
 		}
 
@@ -43,12 +56,25 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 		                   const Abort_actions& aborts,
 		                   unsigned int num_processors)
-		: num_processors(num_processors)
-		, jobs(jobs)
+		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
+		, processors_initial_state(num_processors, Interval<Time>(0, 0))
 		{
 			assert(num_processors > 0);
+			validate_prec_cstrnts<Time>(this->prec, jobs);
+			validate_abort_refs<Time>(aborts, jobs);
+		}
+
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const Abort_actions& aborts,
+			const std::vector<Interval<Time>>& proc_init_state)
+			: jobs(jobs)
+			, prec(prec)
+			, aborts(aborts)
+			, processors_initial_state(proc_init_state)
+		{
+			assert(processors_initial_state.size() > 0);
 			validate_prec_cstrnts<Time>(this->prec, jobs);
 			validate_abort_refs<Time>(aborts, jobs);
 		}
@@ -57,9 +83,17 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs,
 		                   unsigned int num_processors = 1)
 		: jobs(jobs)
-		, num_processors(num_processors)
+		, processors_initial_state(num_processors, Interval<Time>(0, 0))
 		{
 			assert(num_processors > 0);
+		}
+
+		Scheduling_problem(const Workload& jobs,
+			const std::vector<Interval<Time>>& proc_init_state)
+			: jobs(jobs)
+			, processors_initial_state(proc_init_state)
+		{
+			assert(processors_initial_state.size() > 0);
 		}
 	};
 
@@ -68,6 +102,8 @@ namespace NP {
 		// After how many seconds of CPU time should we give up?
 		// Zero means unlimited.
 		double timeout;
+
+		long max_memory_usage = 0; // in KiB
 
 		// After how many scheduling decisions (i.e., depth of the
 		// schedule graph) should we terminate the analysis?
@@ -91,6 +127,19 @@ namespace NP {
 		// Should we write where we are in the analysis?
 		bool verbose;
 
+#ifdef CONFIG_PARALLEL
+		// Parallel execution options
+		bool parallel_enabled = true;
+		unsigned int num_threads = 0;  // 0 = auto-detect
+		unsigned int min_nodes_per_thread = 4;  // Minimum nodes per thread for load balancing
+#endif
+
+#ifdef CONFIG_PRUNING
+		// Pruning options
+		bool pruning_active = false;
+		Pruning_condition pruning_cond;
+#endif
+
 		Analysis_options()
 		: timeout(0)
 		, max_depth(0)
@@ -100,6 +149,15 @@ namespace NP {
 		, merge_use_job_finish_times(false)
 		, merge_depth(1)
 		, verbose(false)
+#ifdef CONFIG_PARALLEL
+		, parallel_enabled(true)
+		, num_threads(0)
+		, min_nodes_per_thread(4)
+#endif
+#ifdef CONFIG_PRUNING
+		, pruning_active(false)
+		, pruning_cond()
+#endif
 		{
 		}
 	};

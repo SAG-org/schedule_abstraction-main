@@ -166,54 +166,6 @@ namespace NP {
 				return r;
 			}
 
-			// This function assumes `j` is already dispatched in `s`.
-			// It then checks if the `j` certainly completed its execution in `s`
-			bool is_cert_finished(const Job_index j, const Node& n, const State& s) const
-			{
-				// If there is a single core, all predecessors of `j_high` must have finished when the core becomes available,
-				// since we assumed that all predecessors of `j_high` were already dispatched.
-				if (num_cpus == 1) 
-					return true;
-
-				// The optimization above can be generalized to multiple cores, using the following knowledge:
-				// We will prove the following claim: (ft(j) denotes finish time of j and ca(n) denotes core_availability(n))
-				// If ft(j).min() <= ca(1).min && ft(j).max() <= ca(2).min() then no core can be available
-				//     before j is finished.
-				// Proof:
-				// (A) Assume for a contradiction that a core becomes available at time T before j is finished at time F > T.
-				//
-				// (B) Since a core became available at time T, it must hold that ca(1).min <= T <= ca(1).max().
-				//
-				// (C) Since j finishes at time F > T, we know that at least 2 cores must be available at time F:
-				//     - the one that became available at time T, and
-				//     - the one used by j
-				//
-				// (D) So ca(2).min() <= F <= ft(j).max() hence ca(2).min() <= ft(j).max().
-				//
-				// (E) From the condition ft(j).max() <= ca(2).min(), it follows that ft(j).max() == ft(j).min() == F.
-				//
-				// (F) Since ca(1).min() <= T < F == ft(j).min(), it follows that ca(1).min() < ft(j).min(),
-				//     which contradicts the condition that ft(j).min() <= ca(1).min().
-				Interval<Time> ft{ 0, 0 };
-				s.get_finish_times(j, ft);
-				if (ft.min() <= s.core_availability(1).min() && ft.max() <= s.core_availability(2).min()) 
-					return true;
-
-				// Alternatively, if we check that `ft(j).max() < ca(2).min()` (strictly smaller),
-				// we would already derive a contradiction at (E) since ca(2).min() <= ft(j).max() contradicts ft(j).max() < ca(2).min()
-				if (ft.max() < s.core_availability(2).min()) 
-					return true;
-
-				// If at least one successor of j has already been dispatched, then j must have finished already.
-				for (const auto& successor_suspension : successors_suspensions[j]) {
-					if (dispatched(n, *successor_suspension.first)) {
-						return true;
-					}
-				}
-				
-				return false;
-			}
-
 			// Assuming that:
 			// - `j_low` is dispatched next, and
 			// - `j_high` is of higher priority than `j_low`, and
@@ -252,10 +204,49 @@ namespace NP {
 					const auto high_suspension = pred.second;
 					auto pred_idx = pred.first->get_job_index();
 
+					Interval<Time> ft{ 0, 0 };
+					s.get_finish_times(pred_idx, ft);
+
 					// If the suspension is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
-					if (high_suspension.max() == 0 && is_cert_finished(pred_idx, n, s)) 
-						continue;
+					if (high_suspension.max() == 0) {
+
+						// If there is a single core, all predecessors of `j_high` must have finished when the core becomes available,
+						// since we assumed that all predecessors of `j_high` were already dispatched.
+						if (num_cpus == 1) continue;
+
+						// The optimization above can be generalized to multiple cores, using the following knowledge:
+						// (1) When j_pred cannot postpone the ready time of j_high to a time instant *later than* the moment j_low can start,
+						//     we can safely disregard j_pred.
+						// (2) j_low cannot start until at least 1 core is available.
+						// (3) So if all cores are certainly occupied until j_pred is finished, we can disregard j_pred.
+						//
+						// We will prove the following claim: (ft(j) denotes the finish time of j and ca(n) denotes core_availability(n))
+						// (4) If ft(j_pred).max() < ca(2).min() then no core can be available before j_pred is finished.
+						// Proof:
+						// (A) Assume for a contradiction that a core becomes available at time T before j_pred is finished at time F > T.
+						//
+						// (B) Since a core became available at time T, it must hold that ca(1).min <= T <= ca(1).max().
+						//
+						// (C) Since j_pred finishes at time F > T, we know that at least 2 cores must be available at time F:
+						//     - the one that became available at time T, and
+						//     - the one used by j_pred
+						//
+						// (D) So ca(2).min() <= F <= ft(j_pred).max() hence ca(2).min() <= ft(j_pred).max().
+						//
+						// (E) this yields a contradiction with the condition ft(j_pred).max() < ca(2).min().
+						if (ft.max() < s.core_availability(2).min()) continue;
+
+						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
+						bool can_disregard = false;
+						for (const auto &successor_suspension : successors_suspensions[pred_idx]) {
+							if (dispatched(n, *successor_suspension.first)) {
+								can_disregard = true;
+								break;
+							}
+						}
+						if (can_disregard) continue;
+					}
 
 					// If j_pred is a predecessor of both j_high and j_low, we can disregard it if the maximum suspension from j_pred to j_high
 					// is at most the minimum suspension from j_pred to j_low: susp_max(j_pred -> j_high) <= susp_min(j_pred -> j_low).
@@ -287,8 +278,6 @@ namespace NP {
 						continue;
 					}
 
-					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred_idx, ft);
 					latest_ready_high = std::max(latest_ready_high, ft.max() + high_suspension.max());
 				}
 				return latest_ready_high;
