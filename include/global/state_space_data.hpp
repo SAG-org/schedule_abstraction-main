@@ -94,6 +94,20 @@ namespace NP {
 					_successors_suspensions[e.get_fromIndex()].push_back({ &jobs[e.get_toIndex()], e.get_suspension() });
 				}
 
+				// sort the predecessors and successors suspensions lists by non-increasing priority order
+				for (auto& pred : _predecessors_suspensions) {
+					std::sort(pred.begin(), pred.end(),
+						[](const std::pair<Job_ref, Interval<Time>>& a, const std::pair<Job_ref, Interval<Time>>& b) {
+							return a.first->higher_priority_than(*(b.first));
+						});
+				}
+				for (auto& succ : _successors_suspensions) {
+					std::sort(succ.begin(), succ.end(),
+						[](const std::pair<Job_ref, Interval<Time>>& a, const std::pair<Job_ref, Interval<Time>>& b) {
+							return a.first->higher_priority_than(*(b.first));
+						});
+				}
+
 				for (const Job<Time>& j : jobs) {
 					if (_predecessors_suspensions[j.get_job_index()].size() > 0) {
 						_successor_jobs_by_latest_arrival.insert({ j.latest_arrival(), &j });

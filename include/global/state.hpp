@@ -1190,6 +1190,7 @@ namespace NP {
 			}
 
 			// update the list of jobs that have all their predecessors completed and were not dispatched yet
+			// Assume: successors_of[j] is sorted in non-increasing priority order
 			void update_ready_successors(const Schedule_node& from,
 				Job_index j, const Successors& successors_of,
 				const Predecessors& predecessors_of,
@@ -1197,12 +1198,8 @@ namespace NP {
 			{
 				ready_successor_jobs.reserve(from.ready_successor_jobs.size() + successors_of[j].size());
 				
-				// add all jobs that were ready and were not the last job dispatched
-				for (const Job<Time>* rj : from.ready_successor_jobs)
-				{
-					if ( rj->get_job_index() != j )
-						ready_successor_jobs.push_back(rj);
-				}
+				// update the list of ready successor jobs by keeping it sorted in non-increasing priority order
+				auto it = from.ready_successor_jobs.begin();
 
 				for (const auto& succ : successors_of[j])
 				{
@@ -1216,13 +1213,30 @@ namespace NP {
 							break;
 						}
 					}
-					if (ready)
+					if (ready) {
+						// add all jobs that were ready and were not the last job dispatched until
+						// we find the first job with lower prio than the new successor job we must add
+						while (it != from.ready_successor_jobs.end())
+						{
+							if (succ.first->higher_priority_than(**it))
+								break; // we found a job with lower priority than the new successor job
+
+							// if the job is not the one we just dispatched, then we keep it in the list of ready successors
+							if ((*it)->get_job_index() != j)
+								ready_successor_jobs.push_back(*it);
+							++it;
+						}
 						ready_successor_jobs.push_back(succ.first);
+					}
 				}
-				// we keep the list sorted by priority order. 
-				// TODO: if successors_of was already sorted, then one could optimize this method 
-				// to not need to call std::sort each time we insert an element
-				std::sort(ready_successor_jobs.begin(), ready_successor_jobs.end(), [](auto a, auto b) {return a->higher_priority_than(*b); });
+				// add all remaining jobs that were ready and were not the last job dispatched 
+				while (it != from.ready_successor_jobs.end())
+				{
+					// if the job is not the one we just dispatched, then we keep it in the list of ready successors
+					if ((*it)->get_job_index() != j)
+						ready_successor_jobs.push_back(*it);
+					++it;
+				}
 			}
 
 			// update the list of jobs with non-dispatched successors 
