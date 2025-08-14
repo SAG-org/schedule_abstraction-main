@@ -391,3 +391,375 @@ TEST_CASE("[global-prec] taskset-25 check 2-core pessimism (2)") {
 	CHECK(space->is_schedulable());
 	delete space;
 }
+
+
+// In the PREcedence MOnster test cases, there are 5 important jobs:
+// - T0J0 and T1J0 both start at time 0 because T0J0, T1J0, T2J0, and T3J0 are ready, and T0 and T1 have the smallest priority
+// - T0J1 starts after T0J0
+// - T1J1 starts after T1J0
+// - T2J0 and T3J0 are the last two jobs that start
+//
+// If T2J0 and T3J0 would start before T0J1 or T1J1, then T0J1 or T1J1 would miss its deadline.
+// Even though that is not possible, earlier versions of the SAG explored such cases due to pessimism.
+const std::string premo_jobs1 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       30,        1 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      130,        3 \n"
+;
+
+const std::string premo_edges1 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       1,        0,        1,        1 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (1)") {
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs1);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(space->is_schedulable());
+	delete space;
+}
+
+// This is an unschedulable variant of precedence monster because the priority of T1J1 is larger
+const std::string premo_jobs2 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       30,        3 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      130,        2 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (2)") {
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs2);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	delete space;
+}
+
+// This is an unschedulable variant of precedence monster because the latest arrival of T0J1 is 11 rather than 10
+const std::string premo_jobs3 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          11,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       30,        1 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      130,        3 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (3)") {
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs3);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	delete space;
+}
+
+// This is an unschedulable variant of precedence monster because T0J1 and T1J1 both need to wait
+// on both T0J0 and T1J0
+const std::string premo_edges4 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       0,        0,        1,        1 \n"
+"       1,        0,        0,        1 \n"
+"       1,        0,        1,        1 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (4)") {
+	auto dag_in = std::istringstream(premo_edges4);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs1);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	CHECK(space->get_finish_times(1).max() == 30);
+	CHECK(space->get_finish_times(3).max() == 45);
+	delete space;
+}
+
+// This is an unschedulable variant of precedence monster because T0J1 needs to wait on both T0J0 and T1J0
+const std::string premo_edges5 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       1,        0,        0,        1 \n"
+"       1,        0,        1,        1 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (5)") {
+	auto dag_in = std::istringstream(premo_edges5);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs1);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	CHECK(space->get_finish_times(1).max() == 30);
+	CHECK(space->get_finish_times(3).max() == 45);
+	delete space;
+}
+
+// This is a longer variant of precedence monster that should still be schedulable, and a weaker variant of (7)
+const std::string premo_jobs6 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     0,      2,          15,          20,        10,       15,       45,        0 \n"
+"     0,      3,          20,          30,        10,       15,       75,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,          10,          10,        10,       15,       30,        1 \n"
+"     1,      2,           0,           5,        10,       15,       75,        1 \n"
+"     1,      3,          30,          30,        10,       15,       90,        1 \n"
+"     2,      0,           0,           0,       100,      100,      190,        2 \n"
+"     3,      0,           0,           0,       100,      100,      190,        3 \n"
+;
+
+const std::string premo_edges6 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       0,        1,        0,        2 \n"
+"       0,        2,        0,        3 \n"
+"       1,        0,        1,        1 \n"
+"       1,        1,        1,        2 \n"
+"       1,        2,        1,        3 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (6)") {
+	auto dag_in = std::istringstream(premo_edges6);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs6);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(space->is_schedulable());
+	delete space;
+}
+
+// This is a longer variant of precedence monster that should still be schedulable
+const std::string premo_jobs7 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     0,      2,          15,          20,        10,       15,       45,        0 \n"
+"     0,      3,          20,          30,        10,       15,       60,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,          10,          10,        10,       15,       30,        1 \n"
+"     1,      2,           0,           5,        10,       15,       45,        1 \n"
+"     1,      3,          30,          30,        10,       15,       60,        1 \n"
+"     2,      0,           0,           0,       100,      100,      160,        2 \n"
+"     3,      0,           0,           0,       100,      100,      160,        3 \n"
+;
+
+const std::string premo_edges7 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       0,        1,        0,        2 \n"
+"       0,        2,        0,        3 \n"
+"       1,        0,        1,        1 \n"
+"       1,        1,        1,        2 \n"
+"       1,        2,        1,        3 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (7)") {
+	auto dag_in = std::istringstream(premo_edges7);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs7);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	// I believe this should be schedulable, but the SAG is currently not able to conclude this
+	//CHECK(space->is_schedulable());
+	// Variant (6) is a weaker variant of this test, which is deemed schedulable
+	delete space;
+}
+
+// This variant is unschedulable because there is suspension
+const std::string premo_edges8 =
+"From TID, From JID,   To TID,   To JID, Sus. Min, Sus. Max \n"
+"       0,        0,        0,        1         0,        1 \n"
+"       1,        0,        1,        1         0,        0 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (8)") {
+	auto dag_in = std::istringstream(premo_edges8);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs1);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	delete space;
+}
+
+// This is a schedulable variant with an extra core that is occupied by a long high-prio job
+const std::string premo_jobs9 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       30,        1 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      130,        3 \n"
+"     4,      0,           0,           0,       100,      100,      100,        0 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (9)") {
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs9);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 3 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	// I think this should be schedulable, but the SAG currently does not conclude this
+	//CHECK(space->is_schedulable());
+	delete space;
+}
+
+// This is a schedulable variant where T1J0 is split into two jobs and T1J2 has a redundant precedence constraint
+const std::string premo_jobs10 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,         5,        8,       15,        0 \n"
+"     0,      1,           3,           5,         5,        7,       15,        0 \n"
+"     0,      2,           0,          10,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       45,        1 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      145,        3 \n"
+;
+
+const std::string premo_edges10 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       0,        1,        0,        2 \n"
+"       0,        0,        0,        2 \n"
+"       1,        0,        1,        1 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (10)") {
+	auto dag_in = std::istringstream(premo_edges10);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs10);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(space->get_finish_times(0).max() == 8);
+	CHECK(space->get_finish_times(1).max() == 15);
+	CHECK(space->get_finish_times(2).max() == 30);
+	CHECK(space->get_finish_times(3).max() == 15);
+	CHECK(space->get_finish_times(4).max() <= 45); // Should be 30, but we are not accurate enough yet
+	CHECK(space->get_finish_times(5).max() == 130);
+	CHECK(space->get_finish_times(6).max() == 130);
+	CHECK(space->is_schedulable());
+	delete space;
+}
+
+// This is an unschedulable variant because T3J0 has a priority of 0 instead of 3
+const std::string premo_jobs11 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,           0,           0,        10,       15,       15,        0 \n"
+"     0,      1,           0,          10,        10,       15,       30,        0 \n"
+"     1,      0,           0,           0,        10,       15,       15,        1 \n"
+"     1,      1,           0,          10,        10,       15,       30,        1 \n"
+"     2,      0,           0,           0,       100,      100,      130,        2 \n"
+"     3,      0,           0,           0,       100,      100,      130,        0 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (11)") {
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs11);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(!space->is_schedulable());
+	CHECK(space->get_finish_times(3).max() > 100);
+	delete space;
+}
+
+// This is a schedulable variant where some other unrelated jobs are certainly finished
+// before the interesting jobs start, and some of these early jobs are predecessors
+// of the important jobs.
+const std::string premo_jobs12 =
+"Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
+"     0,      0,         100,         100,        10,       15,      115,        0 \n"
+"     0,      1,         100,         110,        10,       15,      130,        0 \n"
+"     1,      0,         100,         100,        10,       15,      115,        1 \n"
+"     1,      1,         100,         110,        10,       15,      130,        1 \n"
+"     2,      0,         100,         100,       100,      100,      230,        2 \n"
+"     3,      0,         100,         100,       100,      100,      230,        3 \n"
+"     4,      0,           0,          10,        10,       15,      100,        0 \n"
+"     4,      1,           5,          20,        10,       15,      100,        0 \n"
+"     4,      2,          15,          75,        10,       15,      100,        0 \n"
+;
+
+const std::string premo_edges12 =
+"From TID, From JID,   To TID,   To JID \n"
+"       0,        0,        0,        1 \n"
+"       1,        0,        1,        1 \n"
+"       4,        0,        0,        0 \n"
+"       4,        1,        1,        1 \n"
+"       4,        2,        3,        0 \n"
+;
+
+TEST_CASE("[global-prec] precedence monster (12)") {
+	auto dag_in = std::istringstream(premo_edges12);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
+
+	auto in = std::istringstream(premo_jobs12);
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
+
+	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
+	CHECK(space->is_schedulable());
+	delete space;
+}
