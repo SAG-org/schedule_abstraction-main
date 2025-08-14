@@ -689,8 +689,6 @@ namespace NP {
 						return true;
 				}
 				else {
-					//if (ft.min() <= core_availability(1).min() && ft.max() <= core_availability(2).min())
-					//	return true;
 					if (ft.max() < core_availability(2).min())
 						return true;
 
@@ -770,7 +768,7 @@ namespace NP {
 							}
 							if (!arrives_before_finish) {
 								Interval<Time> ftimes(0, 0);
-								if (get_finish_times(jp->get_job_index(), ftimes) && ftimes.min() > j->latest_arrival()) {
+								if (get_finish_times(jp->get_job_index(), ftimes) && ftimes.min() >= j->latest_arrival()) {
 									// if the predecessor is not finished before j arrives, there is no delay between jp finish time and j's ready time
 									arrives_before_finish = true;
 								}
