@@ -210,7 +210,7 @@ TEST_CASE("[global-prec] taskset-4 with signal-at-start") {
 	auto in = std::istringstream(ts4_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
 
-	NP::Scheduling_problem<dtime_t> prob_bad0{jobs, {}};
+	NP::Scheduling_problem<dtime_t> prob_bad0{jobs};
 	NP::Scheduling_problem<dtime_t> prob_bad1{jobs, prec_bad1};
 	NP::Scheduling_problem<dtime_t> prob_bad2{jobs, prec_bad2};
 	NP::Scheduling_problem<dtime_t> prob_good{jobs, prec_good};
@@ -256,7 +256,7 @@ TEST_CASE("[global-prec] taskset-5 regression test for false schedulable conclus
 	auto in = std::istringstream(ts5_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
 
-	REQUIRE(prec[0].get_maxsus() == 100);
+	REQUIRE(prec[0].get_max_delay() == 100);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 

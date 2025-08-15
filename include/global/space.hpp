@@ -277,7 +277,7 @@ namespace NP {
 			unsigned long num_nodes, num_states, num_edges;
 #endif
 			// updated only by main thread
-			unsigned long current_job_count, max_width;
+			unsigned long long current_job_count, max_width;
 			std::vector<std::pair<unsigned long, unsigned long>> width;
 
 #ifdef CONFIG_PARALLEL
@@ -580,7 +580,7 @@ namespace NP {
 			// find next time by which a job is certainly ready in system state 's'
 			Time next_certain_job_ready_time(const Node& n, const State& s) const
 			{
-				Time t_ws = std::min(s.next_certain_gang_source_job_disptach(), s.next_certain_successor_jobs_disptach());
+				Time t_ws = std::min(s.next_certain_gang_source_job_dispatch(), s.next_certain_successor_jobs_dispatch());
 				Time t_wos = n.get_next_certain_sequential_source_job_release();
 				return std::min(t_wos, t_ws);
 			}
@@ -883,7 +883,7 @@ namespace NP {
 
 			void explore()
 			{
-				int last_time;
+				long long last_time;
 				unsigned int target_depth;
 				
 				if (verbose) {
@@ -896,7 +896,7 @@ namespace NP {
 				make_initial_node(num_cpus);
 
 				while (current_job_count < state_space_data.num_jobs()) {
-					unsigned long n;
+					unsigned long long n;
 #ifdef CONFIG_PARALLEL
 					const auto& new_nodes_part = nodes_storage.back();
 					n = 0;
@@ -921,7 +921,7 @@ namespace NP {
 					last_num_states = num_states;
 
 					if (verbose) {
-						int time = get_cpu_time(); 
+						long long time = get_cpu_time(); 
 						if (time > last_time+4) { // update progress information approxmately every 4 seconds of runtime
 							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "%";
 							last_time = time;

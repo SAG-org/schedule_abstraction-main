@@ -146,24 +146,24 @@ TEST_CASE("[parser] precedence file with signal at column") {
 	CHECK(prec[0].get_fromID().job   == 1);
 	CHECK(prec[0].get_toID().task == 1);
 	CHECK(prec[0].get_toID().job  == 2);
-	CHECK(prec[0].get_minsus() == 1);
-	CHECK(prec[0].get_maxsus() == 2);
+	CHECK(prec[0].get_min_delay() == 1);
+	CHECK(prec[0].get_max_delay() == 2);
 	CHECK(prec[0].get_type() == NP::start_to_start);
 
 	CHECK(prec[1].get_fromID().task  == 1);
 	CHECK(prec[1].get_fromID().job   == 1);
 	CHECK(prec[1].get_toID().task == 2);
 	CHECK(prec[1].get_toID().job  == 1);
-	CHECK(prec[1].get_minsus() == 3);
-	CHECK(prec[1].get_maxsus() == 4);
+	CHECK(prec[1].get_min_delay() == 3);
+	CHECK(prec[1].get_max_delay() == 4);
 	CHECK(prec[1].get_type() == NP::finish_to_start);
 
 	CHECK(prec[2].get_fromID().task  == 2);
 	CHECK(prec[2].get_fromID().job   == 1);
 	CHECK(prec[2].get_toID().task == 3);
 	CHECK(prec[2].get_toID().job  == 13);
-	CHECK(prec[2].get_minsus() == 0);
-	CHECK(prec[2].get_maxsus() == 0);
+	CHECK(prec[2].get_min_delay() == 0);
+	CHECK(prec[2].get_max_delay() == 0);
 	CHECK(prec[2].get_type() == NP::start_to_start);
 }
 
