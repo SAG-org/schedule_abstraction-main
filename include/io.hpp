@@ -576,6 +576,7 @@ namespace NP {
      }
 
 	 Pruning_condition cond(jobset.size());
+     long long time_limit = 0;
 
      // Parse Focus::jobset and Focus::taskset
      std::set<std::pair<unsigned long, unsigned long>> focus_jobset;
@@ -587,15 +588,19 @@ namespace NP {
                  if (job.IsSequence() && job.size() == 2) {
                      focus_jobset.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
                  }
-					else {
-						std::cerr << "Error reading Focus::jobset. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
-					}
+				else {
+					std::cerr << "Error reading Focus::jobset. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+				}
              }
          }
          if (focus["taskset"]) {
              for (const auto& task : focus["taskset"]) {
                  focus_taskset.insert(task.as<unsigned long>());
              }
+         }
+         // Parse Focus::time
+         if (focus["time"]) {
+             time_limit = focus["time"].as<long long>();
          }
      }
 
@@ -614,9 +619,9 @@ namespace NP {
                  if (job.IsSequence() && job.size() == 2) {
                      prune_jobs.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
                  }
-					else {
-						std::cerr << "Error reading Prune::jobs. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
-					}
+				else {
+					std::cerr << "Error reading Prune::jobs. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+				}
              }
          }
      }
@@ -686,6 +691,7 @@ namespace NP {
          }
      }
 
+     cond.time_limit = time_limit;
      return cond;
     }
 #endif
