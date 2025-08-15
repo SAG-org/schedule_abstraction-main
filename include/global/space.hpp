@@ -58,7 +58,7 @@ namespace NP {
 			typedef std::shared_ptr<State> State_ref;
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Problem& prob,
 				const Analysis_options& opts,
 				const Log_options<Time>& log_opts)
@@ -66,12 +66,13 @@ namespace NP {
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
+				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
+					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
-				);
+				));
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -81,15 +82,16 @@ namespace NP {
 				return s;
 			}
 #endif
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Problem& prob,
 				const Analysis_options& opts)
 			{
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
+				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
+					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
@@ -97,7 +99,7 @@ namespace NP {
 					, opts.pruning_active
 					, opts.pruning_cond
 #endif
-				);
+				));
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -108,7 +110,7 @@ namespace NP {
 			}
 
 			// convenience interface for tests
-			static State_space* explore_naively(
+			static std::unique_ptr<State_space> explore_naively(
 				const Workload& jobs,
 				unsigned int num_cpus = 1)
 			{
@@ -119,7 +121,7 @@ namespace NP {
 			}
 
 			// convenience interface for tests
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Workload& jobs,
 				unsigned int num_cpus = 1)
 			{

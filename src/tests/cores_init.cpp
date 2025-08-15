@@ -56,7 +56,6 @@ TEST_CASE("[cores init] read csv and yml") {
 		CHECK(space_csv1->get_finish_times(job).from() == space_csv2->get_finish_times(job).from());
 		CHECK(space_csv1->get_finish_times(job).until() == space_csv2->get_finish_times(job).until());
 	}
-	delete space_csv1;
 
 	auto plat_yml1_in = std::istringstream(platform_spec_yaml_partial);
 	auto plat_yml1 = NP::parse_platform_spec_yaml<dtime_t>(plat_yml1_in);
@@ -69,8 +68,6 @@ TEST_CASE("[cores init] read csv and yml") {
 		CHECK(space_yml1->get_finish_times(job).until() == space_csv2->get_finish_times(job).until());
 	}
 
-	delete space_yml1;
-
 	auto plat_yml2_in = std::istringstream(platform_spec_yaml_complete);
 	auto plat_yml2 = NP::parse_platform_spec_yaml<dtime_t>(plat_yml2_in);
 
@@ -81,9 +78,6 @@ TEST_CASE("[cores init] read csv and yml") {
 		CHECK(space_yml2->get_finish_times(job).from() == space_csv2->get_finish_times(job).from());
 		CHECK(space_yml2->get_finish_times(job).until() == space_csv2->get_finish_times(job).until());
 	}
-
-	delete space_csv2;
-	delete space_yml2;
 }
 
 const std::string uniproc_sn_susp_jobs_file =
@@ -174,8 +168,6 @@ TEST_CASE("[cores init] Uniproc equivalence between analyses") {
 			}
 		}
 	}
-	delete space0;
-	delete space1;;
 }
 
 TEST_CASE("[cores init] Multiproc equivalence between analyses") {
@@ -240,7 +232,4 @@ TEST_CASE("[cores init] Multiproc equivalence between analyses") {
 			}
 		}
 	}
-	delete space0;
-	delete space1;
-	delete space2;
 }

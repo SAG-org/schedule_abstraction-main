@@ -27,8 +27,6 @@ TEST_CASE("[NP state space] Find all next jobs") {
 
 		CHECK(space->get_finish_times(jobs[2]).from()  == 13);
 		CHECK(space->get_finish_times(jobs[2]).until() == 24);
-
-		delete space;
 	}
 
 	SUBCASE("Exploration with merging") {
@@ -43,8 +41,6 @@ TEST_CASE("[NP state space] Find all next jobs") {
 
 		CHECK(space->get_finish_times(jobs[2]).from()  == 13);
 		CHECK(space->get_finish_times(jobs[2]).until() == 24);
-
-		delete space;
 	}
 
 }
@@ -79,9 +75,6 @@ TEST_CASE("[NP state space] Consider large enough interval") {
 
 	CHECK(space->get_finish_times(jobs[2]).from()  == 15);
 	CHECK(space->get_finish_times(jobs[2]).until() == 19);
-
-	delete space;
-	delete nspace;
 }
 
 
@@ -110,8 +103,6 @@ TEST_CASE("[NP state space] Respect priorities") {
 	CHECK(space->get_finish_times(jobs[1]).from()  ==  5);
 	CHECK(space->get_finish_times(jobs[1]).until() ==  5);
 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[NP state space] Respect jitter") {
@@ -138,8 +129,6 @@ TEST_CASE("[NP state space] Respect jitter") {
 	CHECK(space->get_finish_times(jobs[1]).from()  ==  5);
 	CHECK(space->get_finish_times(jobs[1]).until() == 15);
 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[NP state space] Be eager") {
@@ -173,8 +162,6 @@ TEST_CASE("[NP state space] Be eager") {
 	CHECK(space->get_finish_times(jobs[2]).from()  ==  15);
 	CHECK(space->get_finish_times(jobs[2]).until() ==  30);
 
-	delete space;
-	delete nspace;
 }
 
 
@@ -209,8 +196,6 @@ TEST_CASE("[NP state space] Be eager, with short deadline") {
 	CHECK(space->get_finish_times(jobs[2]).from()  ==  35);
 	CHECK(space->get_finish_times(jobs[2]).until() ==  35);
 
-	delete space;
-	delete nspace;
 }
 
 
@@ -245,8 +230,6 @@ TEST_CASE("[NP state space] Treat equal-priority jobs correctly") {
 	CHECK(nspace->get_finish_times(jobs[2]).from()  ==  1002);
 	CHECK(nspace->get_finish_times(jobs[2]).until() ==  1310);
 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[NP state space] Equal-priority simultaneous arrivals") {
@@ -273,8 +256,6 @@ TEST_CASE("[NP state space] Equal-priority simultaneous arrivals") {
 	CHECK(nspace->get_finish_times(jobs[1]).from()  ==  100);
 	CHECK(nspace->get_finish_times(jobs[1]).until() ==  10 + 50 + 150);
 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[NP state space] don't skip over deadline-missing jobs") {
@@ -293,7 +274,6 @@ TEST_CASE("[NP state space] don't skip over deadline-missing jobs") {
 		CHECK(nspace->number_of_edges() == 2);
 		CHECK(nspace->number_of_states() == 3);
         CHECK(nspace->number_of_nodes() == 3);
-		delete nspace;
 	}
 
 	SUBCASE("Exploration with state-merging") {
@@ -303,7 +283,6 @@ TEST_CASE("[NP state space] don't skip over deadline-missing jobs") {
 		CHECK(space->number_of_edges() == 2);
 		CHECK(space->number_of_states() == 3);
         CHECK(space->number_of_nodes() == 3);
-		delete space;
 	}
 
 	// test removed: exploration after deadline missed is not supported currently
@@ -411,8 +390,6 @@ TEST_CASE("[NP state space] explore across bucket boundaries") {
 
 	CHECK(space->number_of_edges() == 3);
 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[NP state space] start times satisfy work-conserving property")
@@ -427,7 +404,6 @@ TEST_CASE("[NP state space] start times satisfy work-conserving property")
         CHECK(space->is_schedulable());
         CHECK(space->get_finish_times(j0) == Interval<dtime_t>(2, 4));
         CHECK(space->get_finish_times(j1) == Interval<dtime_t>(2, 10));
-		delete space;
     }
 
     SUBCASE("exploration with state-merging") {
@@ -435,7 +411,6 @@ TEST_CASE("[NP state space] start times satisfy work-conserving property")
         CHECK(space->is_schedulable());
         CHECK(space->get_finish_times(j0) == Interval<dtime_t>(2, 4));
         CHECK(space->get_finish_times(j1) == Interval<dtime_t>(2, 10));
-		delete space;
     }
 }
 

@@ -54,9 +54,6 @@ TEST_CASE("[gang] uniproc vs gang") {
 		CHECK(ftimes.min() == ftimes_gang.min());
 		CHECK(ftimes.max() == ftimes_gang.max());
 	}
-
-	delete space;
-	delete space_gang;
 }
 
 TEST_CASE("[gang] global vs gang") {
@@ -144,10 +141,6 @@ TEST_CASE("[gang] global vs gang") {
 	auto ftimes_mold_gang = space_moldable_gang->get_finish_times(jobs_moldable_gang[jobs.size() - 1]);
 	CHECK(ftimes.min() == ftimes_mold_gang.min());
 	CHECK(ftimes_mold_gang.max() == 26);
-
-	delete space;
-	delete space_rigid_gang;
-	delete space_moldable_gang;
 }
 
 TEST_CASE("[gang] rigid gang") {
@@ -183,8 +176,6 @@ TEST_CASE("[gang] rigid gang") {
 	CHECK(space_gang->get_finish_times(jobs_gang[7]).max() == 41);
 	CHECK(space_gang->get_finish_times(jobs_gang[8]).min() == 3);
 	CHECK(space_gang->get_finish_times(jobs_gang[8]).max() == 13);
-
-	delete space_gang;
 }
 
 TEST_CASE("[gang] moldable gang") {
@@ -222,6 +213,4 @@ TEST_CASE("[gang] moldable gang") {
 	CHECK(space_gang->get_finish_times(jobs_gang[7]).max() == 47);
 	CHECK(space_gang->get_finish_times(jobs_gang[8]).min() == 5);
 	CHECK(space_gang->get_finish_times(jobs_gang[8]).max() == 20);
-
-	delete space_gang;
 }

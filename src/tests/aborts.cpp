@@ -54,8 +54,6 @@ TEST_CASE("[uni] basic aborts") {
 
 	CHECK(space->get_finish_times(prob.jobs[1]).min() == 37);
 	CHECK(space->get_finish_times(prob.jobs[1]).max() == 60);
-
-	delete space;
 };
 
 const std::string cascade_jobs_file =
@@ -91,8 +89,6 @@ TEST_CASE("[uni] abort stops DL miss cascade") {
 		CHECK(space->get_finish_times(prob.jobs[2]).max() == 25);
 		CHECK(space->get_finish_times(prob.jobs[3]).min() == 12);
 		CHECK(space->get_finish_times(prob.jobs[3]).max() == 13);
-
-		delete space;
 	}
 
 	SUBCASE("with aborts") {
@@ -114,8 +110,6 @@ TEST_CASE("[uni] abort stops DL miss cascade") {
 		CHECK(space->get_finish_times(prob.jobs[2]).max() == 22);
 		CHECK(space->get_finish_times(prob.jobs[3]).min() == 12);
 		CHECK(space->get_finish_times(prob.jobs[3]).max() == 13);
-
-		delete space;
 	}
 
 };

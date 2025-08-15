@@ -66,10 +66,6 @@ TEST_CASE("[susp] Uniproc Supernode Self-Suspensions") {
 		CHECK(pw_nspace->get_finish_times(j) == pw_space->get_finish_times(j));
 		CHECK(pw_nspace->get_finish_times(j).upto() <= gen_space->get_finish_times(j).upto());
 	}
-	delete gen_nspace;
-	delete gen_space;
-	delete pw_nspace;
-	delete pw_space;
 }
 
 
@@ -214,8 +210,6 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (sn_susp)") {
 	for (const Job<dtime_t>& j : prob.jobs) {
 		CHECK(uspace->get_finish_times(j) == gspace->get_finish_times(j)); 
 	}
-	delete uspace;
-	delete gspace;
 }
 
 TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
@@ -240,8 +234,6 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	for (const Job<dtime_t>& j : prob.jobs) {
 		CHECK(uspace->get_finish_times(j) == gspace->get_finish_times(j)); 
 	}
-	delete uspace;
-	delete gspace;
 }
 
 // test removed: the code does not differentiate between uniproc and global anymore
@@ -262,8 +254,6 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	opts.be_naive = false;
 
 	auto gspace = NP::Global::State_space<dtime_t>::explore(prob, opts);
-	CHECK(!(gspace->is_schedulable())); 
-	delete uspace;
-	delete gspace;
+	CHECK(!(gspace->is_schedulable()));
 }*/
 

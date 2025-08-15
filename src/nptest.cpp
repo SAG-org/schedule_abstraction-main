@@ -211,7 +211,6 @@ static Analysis_result analyze(
 		width_stream.str(),
 		deadline_miss_stream.str()
 	};
-	delete space;
 	return results;
 }
 

@@ -35,13 +35,11 @@ TEST_CASE("[dense time] Example in Figure 1(a,b)") {
 	SUBCASE("Naive exploration") {
 		auto space = Global::State_space<dense_t>::explore_naively(jobs);
 		CHECK(!space->is_schedulable());
-		delete space;
 	}
 
 	SUBCASE("Exploration with state-merging") {
 		auto space = Global::State_space<dense_t>::explore(jobs);
 		CHECK(!space->is_schedulable());
-		delete space;
 	}
 }
 
@@ -74,6 +72,4 @@ TEST_CASE("[dense time] Example in Figure 1(c)") {
 		CHECK(nspace->get_finish_times(j) == space->get_finish_times(j));
 		CHECK(nspace->get_finish_times(j).from() != 0);
 	}
-	delete space;
-	delete nspace;
 }

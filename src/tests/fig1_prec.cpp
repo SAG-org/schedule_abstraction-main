@@ -54,9 +54,6 @@ TEST_CASE("[prec] RTSS17-Fig1a") {
 		CHECK(nspace->get_finish_times(j) == space->get_finish_times(j));
 		CHECK(nspace->get_finish_times(j).from() != 0);
 	}
-
-	delete space;
-	delete nspace;
 }
 
 const std::string prec_dag_file_with_cycle =
@@ -88,9 +85,6 @@ TEST_CASE("[prec] handle cycles gracefully") {
 	opts.be_naive = false;
 	auto space = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK_FALSE(space->is_schedulable());
-
-	delete space;
-	delete nspace;
 }
 
 const std::string deadend_jobs_file =
@@ -131,8 +125,5 @@ TEST_CASE("[prec] handle analysis deadend gracefully") {
 	opts.be_naive = false;
 	auto space = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK_FALSE(space->is_schedulable());
-
-	delete space;
-	delete nspace;
 }
 
