@@ -2,6 +2,7 @@
 #define INDEX_SET_H
 
 #include <stdint.h>
+#include <cassert>
 
 namespace NP {
 
