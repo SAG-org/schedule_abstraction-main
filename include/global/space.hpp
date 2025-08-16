@@ -669,7 +669,7 @@ namespace NP {
 			// find next time by which a job is certainly ready in system state 's'
 			Time next_certain_job_ready_time(const Node& n, const State& s) const
 			{
-				Time t_ws = std::min(s.next_certain_gang_source_job_disptach(), s.next_certain_successor_jobs_disptach());
+				Time t_ws = std::min(s.next_certain_gang_source_job_dispatch(), s.next_certain_successor_jobs_dispatch());
 				Time t_wos = n.get_next_certain_sequential_source_job_release();
 				return std::min(t_wos, t_ws);
 			}
