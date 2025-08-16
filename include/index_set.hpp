@@ -2,6 +2,7 @@
 #define INDEX_SET_H
 
 #include <stdint.h>
+#include <cassert>
 
 namespace NP {
 
@@ -27,6 +28,7 @@ namespace NP {
 			Index_set(const Index_set& from, std::size_t idx)
 					: the_set(std::max(from.the_set.size(), (idx / 64) + 1))
 			{
+				assert(idx >= 0);
 				std::copy(from.the_set.begin(), from.the_set.end(), the_set.begin());
 				set_bit(idx, true);
 			}
