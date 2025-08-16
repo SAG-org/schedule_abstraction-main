@@ -1,0 +1,42 @@
+name: Clang Format Check
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  check-format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install clang-format 21
+        run: |
+          sudo apt update
+          sudo apt install -y wget gnupg software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt update
+          sudo apt install -y clang-format-21
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-21 100
+          clang-format-21 --version
+
+      - name: Run clang-format
+        run: |
+          FILES=$(find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.cc" -o -name "*.c" -o -name "*.h" \) -not -path "./lib/*" -not -path "./build/*")
+          clang-format-21 -i $FILES
+
+      - name: Check for formatting issues
+        run: |
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "❌ Formatting issues found. Please run clang-format locally." >&2
+            git diff
+            exit 1
+          else
+            echo "✅ All files are properly formatted."
+          fi 
+      
