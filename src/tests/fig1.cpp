@@ -35,8 +35,6 @@ TEST_CASE("Example in Figure 1(a,b)") {
 		auto ftimes = space->get_finish_times(jobs[1]);
 		CHECK(ftimes.min() == 11);
 		CHECK(ftimes.max() == 24);
-
-		delete space;
 	}
 
 	SUBCASE("Exploration with state-merging") {
@@ -47,8 +45,6 @@ TEST_CASE("Example in Figure 1(a,b)") {
 		auto ftimes = space->get_finish_times(jobs[1]);
 		CHECK(ftimes.min() == 11);
 		CHECK(ftimes.max() == 24);
-
-		delete space;
 	}
 
 	/*SUBCASE("Exploration after deadline miss") {
@@ -109,6 +105,4 @@ TEST_CASE("Example in Figure 1(c)") {
 		CHECK(nspace->get_finish_times(j) == space->get_finish_times(j));
 		CHECK(nspace->get_finish_times(j).from() != 0);
 	}
-	delete space;
-	delete nspace;
 }

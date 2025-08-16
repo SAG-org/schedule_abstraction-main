@@ -178,7 +178,7 @@ namespace NP {
 			}
 
 			// returns the ready time interval of `j` in `s`
-			// assumes all predecessors of j are completed
+			// assumes all predecessors of j are dispatched
 			Interval<Time> ready_times(const State& s, const Job<Time>& j) const
 			{
 				Interval<Time> r = j.arrival_window();
@@ -213,7 +213,7 @@ namespace NP {
 			// If `latest_ready_high <= `ready_low`, the assumption that `j_low` is dispatched next lead to a contradiction,
 			// hence `j_low` cannot be dispatched next. In this case, the exact value of `latest_ready_high` is meaningless,
 			// except that it must be at most `ready_low`. After all, it was computed under an assumption that cannot happen.
-			Time latest_ready_time(
+			Time conditional_latest_ready_time(
 				const Node& n, const State& s,
 				const Job<Time>& j_high, const Job_index j_low,
 				const unsigned int j_low_required_cores = 1) const
@@ -355,7 +355,7 @@ namespace NP {
 						break; // yep, nothing can lower 'when' at this point
 
 					// j is not relevant if it is already scheduled or not of higher priority
-					if (unfinished(n, j) && j.higher_priority_than(reference_job))
+					if (not_dispatched(n, j) && j.higher_priority_than(reference_job))
 					{
 						when = j.latest_arrival();
 						// Jobs are ordered by latest_arrival, so next jobs are later. 
@@ -393,7 +393,7 @@ namespace NP {
 						break; // yep, nothing can lower 'when' at this point
 
 					// j is not relevant if it is already scheduled or not of higher priority
-					if (unfinished(n, j) && j.higher_priority_than(reference_job))
+					if (not_dispatched(n, j) && j.higher_priority_than(reference_job))
 					{
 						// if the minimum parallelism of j is more than ncores, then 
 						// for j to be released and have its successors completed 
@@ -418,35 +418,39 @@ namespace NP {
 				return when;
 			}
 
-			// Find next time by which a successor job (i.e., a job with predecessors) 
-			// of higher priority than the reference_job
-			// is certainly released in system state 's' at or before a time 'until'.
+			// Assuming that `reference_job` is dispatched next, find the earliest time by which a successor job (i.e., a job with predecessors) 
+			// of higher priority than the reference_job is certainly ready in system state 's'.
+			//
+			// Let `ready_min` denote the earliest time at which `reference_job` becomes ready
+			// and let `latest_ready_high` denote the return value of this function.
+			//
+			// If `latest_ready_high <= `ready_min`, the assumption that `reference_job` is dispatched next lead to a contradiction,
+			// hence `reference_job` cannot be dispatched next. In this case, the exact value of `latest_ready_high` is meaningless,
+			// except that it must be at most `ready_min`. After all, it was computed under an assumption that cannot happen.
 			Time next_certain_higher_priority_successor_job_ready_time(
 				const Node& n,
 				const State& s,
 				const Job<Time>& reference_job,
-				const unsigned int ncores,
-				Time until = Time_model::constants<Time>::infinity()) const
-			{
+				const unsigned int ncores
+			) const {
 				auto ready_min = earliest_ready_time(s, reference_job);
-				Time when = until;
+				Time latest_ready_high = Time_model::constants<Time>::infinity();
 
 				// a higer priority successor job cannot be ready before 
 				// a job of any priority is released
 				for (auto it = n.get_ready_successor_jobs().begin();
 					it != n.get_ready_successor_jobs().end(); it++)
 				{
-					const Job<Time>& j = **it;
+					const Job<Time>& j_high = **it;
 
-					// j is not relevant if it is already scheduled or not of higher priority
-					if (j.higher_priority_than(reference_job)) {
+					// j_high is not relevant if it is already scheduled or not of higher priority
+					if (j_high.higher_priority_than(reference_job)) {
 						// does it beat what we've already seen?
-						when = std::min(when,
-							latest_ready_time(n, s, j, reference_job.get_job_index(), ncores));
-						if (when <= ready_min) break;
+						latest_ready_high = std::min(latest_ready_high, conditional_latest_ready_time(n, s, j_high, reference_job.get_job_index(), ncores));
+						if (latest_ready_high <= ready_min) break;
 					}
 				}
-				return when;
+				return latest_ready_high;
 			}
 
 			// Find the earliest possible job release of all jobs in a node except for the ignored job
@@ -465,7 +469,7 @@ namespace NP {
 					DM("         * looking at " << j << std::endl);
 
 					// skip if it is the one we're ignoring or if it was dispatched already
-					if (&j == &ignored_job || !unfinished(n, j))
+					if (&j == &ignored_job || dispatched(n, j))
 						continue;
 
 					DM("         * found it: " << j.earliest_arrival() << std::endl);
@@ -494,7 +498,7 @@ namespace NP {
 					DM("         * looking at " << *jp << std::endl);
 
 					// skip if it is the one we're ignoring or the job was dispatched already
-					if (jp == &ignored_job || !unfinished(n, *jp))
+					if (jp == &ignored_job || dispatched(n, *jp))
 						continue;
 
 					DM("         * found it: " << jp->latest_arrival() << std::endl);
@@ -523,7 +527,7 @@ namespace NP {
 					DM("         * looking at " << *jp << std::endl);
 
 					// skip if it is the one we're ignoring or the job was dispatched already
-					if (jp == &ignored_job || !unfinished(n, *jp))
+					if (jp == &ignored_job || dispatched(n, *jp))
 						continue;
 
 					DM("         * found it: " << jp->latest_arrival() << std::endl);
@@ -567,14 +571,14 @@ namespace NP {
 
 		private:
 
-			bool unfinished(const Node& n, const Job<Time>& j) const
+			bool not_dispatched(const Node& n, const Job<Time>& j) const
 			{
-				return n.job_incomplete(j.get_job_index());
+				return n.job_not_dispatched(j.get_job_index());
 			}
 
 			bool dispatched(const Node& n, const Job<Time>& j) const
 			{
-				return !unfinished(n, j);
+				return n.job_dispatched(j.get_job_index());
 			}
 
 			State_space_data(const State_space_data& origin) = delete;

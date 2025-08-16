@@ -74,6 +74,10 @@ To enable the collection of schedule graphs (the `-g` option in `nptest`), set t
 
 Note that enabling `COLLECT_SCHEDULE_GRAPHS` disallow parallel analysis, i.e., the analysis is single-threaded. We do not recommend to turn it on by default. It is primarily a debugging aid. 
 
+To enable focused/pruned exploration (the `--focus` option in `nptest`), set the option `USE__PRUNING` to `yes`:
+
+    cmake -DUSE_PRUNING=yes ..
+
 By default, `nptest` uses the default `libc` memory allocator (which may be a tremendous scalability bottleneck if the parallel execution is turned on). To instead use the parallel allocator that comes with Intel TBB, set `USE_JE_MALLOC` to `no` and `USE_TBB_MALLOC` to `yes`. 
 
     cmake -DUSE_JE_MALLOC=no -DUSE_TBB_MALLOC=yes ..
@@ -98,7 +102,7 @@ $ ./runtests
 
 ## Input Format
 
-The tool operates on CSV files with a fixed column order. There are three main input formats: *job sets*, *precedence constraints*, and *abort actions*. 
+The tool operates on CSV files with a fixed column order. There are four main input formats: *job sets*, *precedence constraints*, *abort actions*, and *platform specification*. YAML input is also supported for job sets, precedence constraints, and platform specifications (see below for details). **YAML abort files are not yet supported.**
 
 ### Job Sets
 
@@ -127,6 +131,8 @@ All numeric parameters can be 64-bit integers (preferred) or floating point valu
 
 Example job set input files are provided in the `examples/` folder (e.g., [examples/fig1a.csv](examples/fig1a.csv)).
 
+YAML job set files are also supported. If a job set file has a `.yaml` or `.yml` extension, it will be parsed as YAML. If the YAML job set includes precedence constraints, do not specify a separate precedence file.
+
 ### Precedence Constraints
 
 A precedent constraints CSV files define a DAG on the set of jobs provided in a job set CSV file in a straightforward manner. Each row specifies a forward edge. The following four columns are required.
@@ -140,6 +146,7 @@ A precedent constraints CSV files define a DAG on the set of jobs provided in a 
 
 An example precedent constraints file is provided in the `examples/` folder (e.g., [examples/fig1a.prec.csv](examples/fig1a.prec.csv)).
 
+YAML precedence constraint files are also supported. If a precedence file has a `.yaml` or `.yml` extension, it will be parsed as YAML. Precedence constraints can be specified in the YAML job set file directly, in which case a separate precedence file is not needed.
 
 ### Abort Actions
 
@@ -153,6 +160,26 @@ A file containing abort actions lists for (some of) the jobs comprising a worklo
 6. **Maximum Cleanup Cost** - the maximum time required by the runtime system to abort the job
 
 An example abort actions file is provided in the `examples/` folder (e.g., [examples/abort.actions.csv](examples/abort.actions.csv)).
+
+**YAML abort files are not yet supported.**
+
+### Platform Specification
+
+A platform specification file (CSV or YAML) can be provided with the `--platform` option to describe homegeneous multicore platforms with a non-idle initial state (i.e., cores are busy until a specified time). If a platform file is provided, the `-m` option must not be used.
+The CSV platform specification file describes the initial state of the platform using 2*m+1 columns (where m is the number of cores):
+1. **Number of cores** - the number of cores in the platform (replacing the -m option)
+2. **Cores availability intervals** - a comma-separated list indicating when each core will possibly and certainly become available.
+For example, `2, 5, 10, 0, 7` means there are 2 cores (first column), that the first core will become free any time between time 5 and 10, and the second core will become free any time between time 0 and 7.
+
+A YAML version is also supported. If a platform file has a `.yaml` or `.yml` extension, it will be parsed as YAML. The YAML platform specification file describes the initial state of the platform using the following format:
+```
+platform:
+  cores: <number of cores>
+  core_availabilities: 
+    - [<min avail time>, <max avail time>]
+    - [<min avail time>, <max avail time>]
+    ...
+```
 
 ## Analyzing a Job Set
 
@@ -213,7 +240,7 @@ examples/abort.jobs.csv,  1,  4,  5,  4,  0,  0.000089,  1796.000000,  0,  1
 
 ```
 $ build/nptest -g examples/abort.jobs.csv -c
-examples/abort.jobs.csv,  0,  4,  5,  4,  0,  0.000088,  1760.000000,  0,  1
+examples/abort.jobs.csv,  0,  4,  5,  4,  0,  0.000088,  1760.000000,  0, 0,  1
 ```
 
 Without the job abort action specified in [examples/abort.actions.csv](examples/abort.actions.csv), the workload can indeed miss deadlines and is thus unschedulable.
@@ -232,8 +259,9 @@ The output is provided in CSV format and consists of the following columns:
 6. The number of edges that were discovered. 
 7. The maximum “exploration front width” of the schedule graph, which is the maximum number of unprocessed states  that are queued for exploration (at any point in time). 
 8. The CPU time used in the analysis (in seconds).
-9. The peak amount of memory used (as reported by `getrusage()`), divided by 1024. Due to non-portable differences in `getrusage()`, on Linux this reports the memory usage in megabytes, whereas on macOS it reports the memory usage in kilobytes. On Windows, the memory usage reporting is deactivated. It will always show 0.
+9. The peak amount of memory used. Due differences between platforms, on Linux and Windows this reports the memory usage in megabytes, whereas on macOS it reports the memory usage in kilobytes. 
 10. A timeout indicator: 1 if the state-space exploration was aborted due to reaching the time limit (as set with the `-l` option); 0 otherwise. 
+11. An out-of-memory indicator: 1 if the state-space exploration was aborted due to exceeding the memory-usage limit (as set with the `--mem-limit` option); 0 otherwise. 
 11. The number of processors assumed during the analysis. 
 
 Pass the `--header` flag to `nptest` to print out column headers. 
@@ -279,6 +307,28 @@ If the flag `--verbose` is set when launching an analysis, the tool will show th
 The `-r` option reports the response time bounds of every job but also reports the evolution of the width (in terms of nodes) of the SAG for each depth level.
 
 If invoked on an input file named `foo.csv`, the SAG width evolution will be stored in a file named `foo.width.csv`. 
+
+### Log Options (`--log_opts`)
+
+If the `-g`/`--save-graph` option is set, you can use the `--log_opts` option to provide a YAML file that configures what part of the schedule abstraction graph is recorded and what information is printed in the graph. This allows for fine-grained control over the output of the schedule abstraction graph in Graphviz dot format. If `--log_opts` is provided without `-g`, a warning is issued and the file is ignored.
+
+Example usage:
+
+```
+$ build/nptest examples/fig1a.csv -g --log_opts examples/log_config.yaml
+```
+
+### Focused/Pruned Exploration (`--focus`)
+
+If the tool is compiled with focused/pruned exploration support (`USE__PRUNING=yes`), you can use the `-f` or `--focus` option to provide a YAML file specifying which parts of the state-space to focus on or to prune during exploration. This is useful for restricting the analysis to execution scenarios involving specific jobs or tasks or for debugging purposes.
+
+Example usage:
+
+```
+$ build/nptest examples/fig1a.csv --focus examples/focused_expl_spec.yaml
+```
+
+The YAML file can specify sets of jobs or tasks to focus on or prune. See `examples/focused_expl_spec.yaml` for the expected format.
 
 ## Questions, Patches, or Suggestions
 

@@ -91,10 +91,6 @@ TEST_CASE("[global] RTSS17-Fig-1a") {
 	auto space2 = NP::Global::State_space<dtime_t>::explore(jobs, num_cpus);
 
 	CHECK_FALSE(space2->is_schedulable());
-	delete space;
-	delete nspace;
-	delete space2;
-	delete nspace2;
 }
 
 const std::string global_fig1_file =
@@ -121,11 +117,7 @@ TEST_CASE("[global] ECRTS18-Fig-1") {
 		num_cpus);
 
 	CHECK_FALSE(space->is_schedulable()); 
-	delete space;
-	delete nspace;
 }
-
-static const auto inf = Time_model::constants<dtime_t>::infinity();
 
 TEST_CASE("[global] Find all next jobs") {
 	NP::Job<dtime_t>::Job_set jobs{
@@ -137,7 +129,7 @@ TEST_CASE("[global] Find all next jobs") {
 	NP::Scheduling_problem<dtime_t> prob{jobs};
 	NP::Analysis_options opts;
 
-	prob.num_processors = 1;
+	//prob.num_processors = 1;
 
 	SUBCASE("Naive exploration") {
 		auto space = NP::Global::State_space<dtime_t>::explore_naively(jobs, 1);
@@ -151,7 +143,6 @@ TEST_CASE("[global] Find all next jobs") {
 
 		CHECK(space->get_finish_times(jobs[2]).from()  == 13);
 		CHECK(space->get_finish_times(jobs[2]).until() == 24); 
-		delete space;
 	}
 
 	SUBCASE("Exploration with merging") {
@@ -166,7 +157,6 @@ TEST_CASE("[global] Find all next jobs") {
 
 		CHECK(space->get_finish_times(jobs[2]).from()  == 13);
 		CHECK(space->get_finish_times(jobs[2]).until() == 24); 
-		delete space;
 	}
 
 }
@@ -201,8 +191,6 @@ TEST_CASE("[global] Consider large enough interval") {
 
 	CHECK(space->get_finish_times(jobs[2]).from()  == 15); 
 	CHECK(space->get_finish_times(jobs[2]).until() == 19); 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] Respect priorities") {
@@ -228,8 +216,6 @@ TEST_CASE("[global] Respect priorities") {
 
 	CHECK(space->get_finish_times(jobs[1]).from()  ==  5);
 	CHECK(space->get_finish_times(jobs[1]).until() ==  5);
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] Respect jitter") {
@@ -255,8 +241,6 @@ TEST_CASE("[global] Respect jitter") {
 
 	CHECK(space->get_finish_times(jobs[1]).from()  ==  5);
 	CHECK(space->get_finish_times(jobs[1]).until() == 15);
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] Be eager") {
@@ -289,8 +273,6 @@ TEST_CASE("[global] Be eager") {
 
 	CHECK(space->get_finish_times(jobs[2]).from()  ==  15);
 	CHECK(space->get_finish_times(jobs[2]).until() ==  30); 
-	delete space;
-	delete nspace;
 }
 
 
@@ -324,8 +306,6 @@ TEST_CASE("[global] Be eager, with short deadline") {
 
 	CHECK(space->get_finish_times(jobs[2]).from()  ==  35);
 	CHECK(space->get_finish_times(jobs[2]).until() ==  35);
-	delete space;
-	delete nspace;
 }
 
 
@@ -359,8 +339,6 @@ TEST_CASE("[global] Treat equal-priority jobs correctly") {
 
 	CHECK(nspace->get_finish_times(jobs[2]).from()  ==  1002);
 	CHECK(nspace->get_finish_times(jobs[2]).until() ==  1310); 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] Equal-priority simultaneous arrivals") {
@@ -386,8 +364,6 @@ TEST_CASE("[global] Equal-priority simultaneous arrivals") {
 
 	CHECK(nspace->get_finish_times(jobs[1]).from()  ==  100);
 	CHECK(nspace->get_finish_times(jobs[1]).until() ==  10 + 50 + 150);  
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] don't skip over deadline-missing jobs") {
@@ -410,8 +386,6 @@ TEST_CASE("[global] don't skip over deadline-missing jobs") {
 
 	CHECK(space->number_of_edges() == 2); 
 	CHECK(space->number_of_states() == 3); 
-	delete space;
-	delete nspace;
 }
 
 TEST_CASE("[global] explore across bucket boundaries") {
@@ -435,7 +409,5 @@ TEST_CASE("[global] explore across bucket boundaries") {
 	CHECK(space->is_schedulable());
 
 	CHECK(space->number_of_edges() == 3);
-	delete space;
-	delete nspace;
 }
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8.0)
 
-project(NP_schedulabiliy_test VERSION 3.1.4 LANGUAGES CXX)
+project(NP_schedulabiliy_test VERSION 3.1.14 LANGUAGES CXX)
 
 include_directories(include)
 include_directories(lib/include)
@@ -10,6 +10,12 @@ option(USE_TBB_MALLOC "Use the Intel TBB scalable memory allocator" OFF)
 option(USE_JE_MALLOC "Use the Facebook jemalloc scalable memory allocator" OFF)
 option(COLLECT_SCHEDULE_GRAPHS "Enable the collection of schedule graphs (disables parallel)" OFF)
 option(DEBUG "Enable debugging" OFF)
+option(USE_PRUNING "Enable pruning support during state-space exploration" OFF)
+
+if (USE_PRUNING)
+    add_compile_definitions(CONFIG_PRUNING)
+    message(NOTICE "Pruning support enabled")
+endif ()
 
 if (PARALLEL_RUN AND COLLECT_SCHEDULE_GRAPHS)
     message(FATAL_ERROR "Parallel run and schedule graph collection cannot be enabled at the same time")
@@ -24,16 +30,19 @@ endif ()
 
 if (PARALLEL_RUN OR USE_TBB_MALLOC)
     find_package(TBB REQUIRED)
+    message(NOTICE "Intel TBB found and will be used for parallel execution")
 endif()
 
 if (COLLECT_SCHEDULE_GRAPHS)
     add_compile_definitions(CONFIG_COLLECT_SCHEDULE_GRAPH)
     if (PARALLEL_RUN)
         message(WARNING "Schedule graph collection is not supported in parallel mode")
+        set(PARALLEL_RUN OFF)
     endif()
 elseif (PARALLEL_RUN)
     set(TBB_LIB TBB::tbb)
     add_compile_definitions(CONFIG_PARALLEL)
+    message(NOTICE "Parallel execution enabled with TBB")
 endif ()
 
 if (USE_JE_MALLOC)
@@ -103,3 +112,4 @@ if (MSVC)
     target_compile_options(runtests PUBLIC "/Zc:__cplusplus")
     target_compile_options(nptest PUBLIC "/Zc:__cplusplus")
 endif()
+
