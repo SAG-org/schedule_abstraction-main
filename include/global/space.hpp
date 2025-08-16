@@ -283,7 +283,7 @@ namespace NP {
 #endif
 
 			// updated only by main thread - no protection needed
-			unsigned long current_job_count, max_width;
+			unsigned long long current_job_count, max_width;
 			std::vector<std::pair<unsigned long, unsigned long>> width;
 
 			Processor_clock cpu_time;
@@ -953,7 +953,7 @@ namespace NP {
 
 			void explore()
 			{
-				int last_time = get_cpu_time();
+				long long last_time = get_cpu_time();
 				unsigned int target_depth;
 				
 				if (verbose) {
@@ -967,9 +967,9 @@ namespace NP {
 				while (current_job_count < state_space_data.num_jobs()) {
 					Nodes& exploration_front = nodes();
 #ifdef CONFIG_PARALLEL
-					unsigned long n = exploration_front.unsafe_size();
+					unsigned long long n = exploration_front.unsafe_size();
 #else
-					unsigned long n = exploration_front.size();
+					unsigned long long n = exploration_front.size();
 #endif
 					if (n == 0)
 					{
@@ -983,7 +983,7 @@ namespace NP {
 					width[current_job_count] = { n, current_states - last_num_states };
 					last_num_states = current_states;
 
-					int time = get_cpu_time();
+					long long time = get_cpu_time();
 					if (time > last_time + 4) {
 						// check memory usage
 						long mem = check_memory_abort();
