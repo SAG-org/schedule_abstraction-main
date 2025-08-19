@@ -19,6 +19,10 @@
 #include "util.hpp"
 #include "global/state_space_data.hpp"
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+#include "global/extension/state_extension.hpp"
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 namespace NP {
 
 	namespace Global {
@@ -77,6 +81,11 @@ namespace NP {
 			// finish times of all the jobs that still have an unscheduled successor with a finish_to_start constraint
 			Job_times job_finish_times;
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+			// possible extensions of the state (e.g., for task chain analysis)
+			State_extensions<Time> extensions;
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 		public:
 			typedef typename NP::Job<Time>* Job_ref;
 			
@@ -89,6 +98,9 @@ namespace NP {
 				, earliest_certain_gang_source_job_dispatch{ state_space_data.get_earliest_certain_gang_source_job_release() }
 			{
 				assert(core_avail.size() > 0);
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.construct(*this, num_processors, state_space_data);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
 			Schedule_state(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
@@ -111,6 +123,9 @@ namespace NP {
 					core_avail[i].extend_to(amax[i]);
 					core_avail[i].lower_bound(amin[i]);
 				}
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.construct(*this, proc_initial_state, state_space_data);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
 			// transition: new state by scheduling a job 'j' in an existing state 'from'
@@ -149,6 +164,13 @@ namespace NP {
 				// NOTE: must be done after the core availabilities have been updated
 				update_earliest_certain_gang_source_job_dispatch(next_source_job_rel, scheduled_jobs, state_space_data);
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.construct(
+					*this, from, j, start_times, finish_times,
+					scheduled_jobs, jobs_with_pending_succ, ready_succ_jobs,
+					state_space_data, next_source_job_rel, ncores);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
@@ -161,6 +183,10 @@ namespace NP {
 				job_start_times.clear();
 				job_finish_times.clear();
 				assert(core_avail.size() > 0);
+
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.reset(*this, num_processors, state_space_data);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
@@ -184,6 +210,10 @@ namespace NP {
 					core_avail[i].extend_to(amax[i]);
 					core_avail[i].lower_bound(amin[i]);
 				}
+
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.reset(*this, proc_initial_state, state_space_data);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
 			void reset(
@@ -225,8 +255,22 @@ namespace NP {
 				// NOTE: must be done after the core availabilities have been updated
 				update_earliest_certain_gang_source_job_dispatch(next_source_job_rel, scheduled_jobs, state_space_data);
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.reset(
+					*this, from, j, start_times, finish_times,
+					scheduled_jobs, jobs_with_pending_succ, ready_succ_jobs,
+					state_space_data, next_source_job_rel, ncores);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 				DM("*** new state: constructed " << *this << std::endl);
 			}
+
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+			const State_extensions<Time>& get_extensions() const
+			{
+				return extensions;
+			}
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 
 			const Core_availability& get_cores_availability() const
 			{
