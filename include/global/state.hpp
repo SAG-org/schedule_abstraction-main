@@ -165,9 +165,8 @@ namespace NP {
 				update_earliest_certain_gang_source_job_dispatch(next_source_job_rel, scheduled_jobs, state_space_data);
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
-				extensions.construct(
-					*this, from, j, start_times, finish_times,
-					scheduled_jobs, jobs_with_pending_succ, ready_succ_jobs,
+				extensions.construct(*this, from, j, start_times, finish_times,
+					scheduled_jobs, jobs_with_pending_start_succ, jobs_with_pending_finish_succ, ready_succ_jobs,
 					state_space_data, next_source_job_rel, ncores);
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
@@ -256,9 +255,8 @@ namespace NP {
 				update_earliest_certain_gang_source_job_dispatch(next_source_job_rel, scheduled_jobs, state_space_data);
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
-				extensions.reset(
-					*this, from, j, start_times, finish_times,
-					scheduled_jobs, jobs_with_pending_succ, ready_succ_jobs,
+				extensions.reset(*this, from, j, start_times, finish_times,
+					scheduled_jobs, jobs_with_pending_start_succ, jobs_with_pending_finish_succ, ready_succ_jobs,
 					state_space_data, next_source_job_rel, ncores);
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
