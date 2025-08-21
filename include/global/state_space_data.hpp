@@ -116,10 +116,10 @@ namespace NP {
 				, jobs_by_deadline(_jobs_by_deadline)
 				, _must_start_predecessors(jobs.size())
 				, must_start_predecessors(_must_start_predecessors)
-				, _inter_job_constraints(jobs.size())
-				, inter_job_constraints(_inter_job_constraints)
 				, _must_finish_predecessors(jobs.size())
 				, must_finish_predecessors(_must_finish_predecessors)
+				, _inter_job_constraints(jobs.size())
+				, inter_job_constraints(_inter_job_constraints)
 				, abort_actions(jobs.size(), NULL)
 			{
 				for (const auto& e : edges) {
@@ -136,7 +136,7 @@ namespace NP {
 				}
 
 				for (const Job<Time>& j : jobs) {
-					const Inter_job_constraints &job_suspensions = _inter_job_constraints[j.get_job_index()];
+					const Inter_job_constraints& job_suspensions = _inter_job_constraints[j.get_job_index()];
 					if (job_suspensions.predecessors_finish_to_start.size() > 0 || job_suspensions.predecessors_start_to_start.size() > 0) {
 						_successor_jobs_by_latest_arrival.insert({ j.latest_arrival(), &j });
 					}
@@ -294,7 +294,7 @@ namespace NP {
 
 						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
 						bool can_disregard = false;
-						for (const auto &s : inter_job_constraints[pred_idx].finish_to_successors_start) {
+						for (const auto& s : inter_job_constraints[pred_idx].finish_to_successors_start) {
 							if (dispatched(n, *s.reference_job)) {
 								can_disregard = true;
 								break;
