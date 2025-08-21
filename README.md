@@ -143,6 +143,9 @@ A precedent constraints CSV files define a DAG on the set of jobs provided in a 
 4. **Successor job ID** - the job ID of the target of the edge
 5. **Delay min** [optional] - the minimum delay between the execution completion of the predecessor job to the release of the successor job 
 6. **Delay max** [optional] - the maximum delay between the execution completion of the predecessor job to the release of the successor job
+7. **Type** [optional] - must be either:
+   - `f` (default): the successor job waits until the predecessor job has **finished**
+   - `s`: the successor job waits until the predecessor job has **started**
 
 An example precedent constraints file is provided in the `examples/` folder (e.g., [examples/fig1a.prec.csv](examples/fig1a.prec.csv)).
 

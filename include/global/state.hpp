@@ -157,8 +157,8 @@ namespace NP {
 				core_avail = Core_availability(num_processors, Interval<Time>(Time(0), Time(0)));
 				earliest_certain_successor_job_dispatch = Time_model::constants<Time>::infinity();
 				earliest_certain_gang_source_job_dispatch = state_space_data.get_earliest_certain_gang_source_job_release();
-				jobs_with_pending_start_succ.clear();
-				jobs_with_pending_finish_succ.clear();
+				job_start_times.clear();
+				job_finish_times.clear();
 				assert(core_avail.size() > 0);
 			}
 

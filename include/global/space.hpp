@@ -974,7 +974,7 @@ namespace NP {
 				while (current_job_count < state_space_data.num_jobs()) {
 					Nodes& exploration_front = nodes();
 #ifdef CONFIG_PARALLEL
-					unsigned long n = exploration_front.unsafe_size();
+					unsigned long long n = exploration_front.unsafe_size();
 #else
 					unsigned long long n = exploration_front.size();
 #endif
