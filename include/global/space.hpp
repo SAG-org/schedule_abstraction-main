@@ -643,7 +643,11 @@ namespace NP {
 								Node_ref next =
 									new_node(1, new_n, j, j.get_job_index(), state_space_data, 0, 0, 0);
 								//const CoreAvailability empty_cav = {};
-								State_ref next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
+								State_ref next_s = new_state(
+										*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(),
+										new_n.get_jobs_with_pending_start_successors(), new_n.get_jobs_with_pending_finish_successors(),
+										new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin
+								);
 								next->add_state(next_s);
 								increment_states_safe();
 								deadline_miss_state = next_s;
@@ -674,7 +678,7 @@ namespace NP {
 				return std::min(t_wos, t_ws);
 			}
 
-			// assumes j is ready
+			// assumes all predecessors of j have been dispatched
 			// NOTE: we don't use Interval<Time> here because the
 			//       Interval c'tor sorts its arguments.
 			std::pair<Time, Time> start_times(
@@ -816,7 +820,10 @@ namespace NP {
 						// next should always exist at this point, possibly without states in it
 						// create a new state resulting from scheduling j in state s on p cores and try to merge it with an existing state in node 'next'.							
 						new_or_merge_state(*next, *s, j.get_job_index(),
-							stimes, ftimes, next->get_scheduled_jobs(), next->get_jobs_with_pending_successors(), next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p);
+							stimes, ftimes, next->get_scheduled_jobs(),
+							next->get_jobs_with_pending_start_successors(), next->get_jobs_with_pending_finish_successors(),
+							next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p
+						);
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 						if(log)

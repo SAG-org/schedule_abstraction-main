@@ -125,7 +125,9 @@ namespace NP {
 	Precedence_constraint<Time> parse_precedence_constraint(std::istream &in)
 	{
 		unsigned long from_tid, from_jid, to_tid, to_jid;
-		Time sus_min=0, sus_max=0;
+		Time delay_min=0, delay_max=0;
+		std::string signal_type;
+		Precedence_type type = finish_to_start;
 
 		std::ios_base::iostate state_before = in.exceptions();
 
@@ -141,16 +143,26 @@ namespace NP {
 		next_field(in);
 		if (more_fields_in_line(in))
 		{
-			in >> sus_min;
+			in >> delay_min;
 			next_field(in);
-			in >> sus_max;
+			in >> delay_max;
+		}
+
+		next_field(in);
+		if (more_fields_in_line(in))
+		{
+			in >> signal_type;
+			std::transform(signal_type.begin(), signal_type.end(), signal_type.begin(), [](unsigned char c){ return std::tolower(c); });
+			if (signal_type == "s") type = start_to_start;
+			else if (signal_type != "f") throw std::invalid_argument("Unexpected type: must be 's' or 'f'");
 		}
 
 		in.exceptions(state_before);
 
 		return Precedence_constraint<Time>{JobID{from_jid, from_tid},
 											JobID{to_jid, to_tid},
-		                          			Interval<Time>{sus_min, sus_max}};
+											Interval<Time>{delay_min, delay_max},
+											type};
 	}
 
 	template<class Time>

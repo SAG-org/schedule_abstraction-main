@@ -31,13 +31,49 @@ namespace NP {
 			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
 			typedef Schedule_state<Time> State;
 			typedef Schedule_node<Time> Node;
-			typedef typename std::vector<Interval<Time>> CoreAvailability;
-			typedef const Job<Time>* Job_ref;
+			typedef std::vector<Interval<Time>> CoreAvailability;
+			typedef const NP::Job<Time>* Job_ref;
+			struct Job_delay {
+				Job_ref reference_job;
+				Interval<Time> delay;
+			};
+			typedef std::vector<Job_delay> Delay_list;
 			typedef std::vector<Job_index> Job_precedence_set;
-			typedef std::vector<std::pair<Job_ref, Interval<Time>>> Suspensions_list;
+
+			struct Inter_job_constraints {
+				// Delay constraints that must be respected between the start of j's predecessors and the start of j
+				// This means j can't start until all jobs in predecessors_start_to_start have started.
+				Delay_list predecessors_start_to_start;
+
+				// Delay constraints that must be respected between the completion of j's predecessors and the start of j
+				// This means j can't start until all jobs in predecessors_finish_to_start have finished.
+				Delay_list predecessors_finish_to_start;
+
+				// Delay constraints that must be respected between the start of j and the start of its successors
+				// This means none of the jobs in start_to_successors_start can start before j starts.
+				Delay_list start_to_successors_start;
+
+				// Delay constraints that must be respected between the completion of j and the start of its successors
+				// This means none of the jobs in finish_to_successors_start can start before j has finished.
+				Delay_list finish_to_successors_start;
+			
+				Time get_min_delay_after_start_of(Job_index predecessor) const {
+					for (const auto &suspension : predecessors_start_to_start) {
+						if (suspension.reference_job->get_job_index() == predecessor) return suspension.delay.min();
+					}
+					return -1;
+				}
+
+				Time get_min_delay_after_finish_of(Job_index predecessor) const {
+					for (const auto &suspension : predecessors_finish_to_start) {
+						if (suspension.reference_job->get_job_index() == predecessor) return suspension.delay.min();
+					}
+					return -1;
+				}
+			};
 
 		private:
-			typedef std::multimap<Time, Job_ref> By_time_map;
+			typedef std::multimap<Time, const NP::Job<Time>*> By_time_map;
 
 			// not touched after initialization
 			By_time_map _successor_jobs_by_latest_arrival;
@@ -45,11 +81,9 @@ namespace NP {
 			By_time_map _gang_source_jobs_by_latest_arrival;
 			By_time_map _jobs_by_earliest_arrival;
 			By_time_map _jobs_by_deadline;
-			std::vector<Job_precedence_set> _predecessors;
-
-			// not touched after initialization
-			std::vector<Suspensions_list> _predecessors_suspensions;
-			std::vector<Suspensions_list> _successors_suspensions;
+			std::vector<Job_precedence_set> _must_start_predecessors;
+			std::vector<Job_precedence_set> _must_finish_predecessors;
+			std::vector<Inter_job_constraints> _inter_job_constraints;
 
 			// list of actions when a job is aborted
 			std::vector<const Abort_action<Time>*> abort_actions;
@@ -65,9 +99,9 @@ namespace NP {
 			const By_time_map& successor_jobs_by_latest_arrival;
 			const By_time_map& sequential_source_jobs_by_latest_arrival;
 			const By_time_map& gang_source_jobs_by_latest_arrival;
-			const std::vector<Job_precedence_set>& predecessors;
-			const std::vector<Suspensions_list>& predecessors_suspensions;
-			const std::vector<Suspensions_list>& successors_suspensions;
+			const std::vector<Job_precedence_set>& must_start_predecessors;
+			const std::vector<Job_precedence_set>& must_finish_predecessors;
+			const std::vector<Inter_job_constraints>& inter_job_constraints;
 
 			State_space_data(const Workload& jobs,
 				const Precedence_constraints& edges,
@@ -80,22 +114,30 @@ namespace NP {
 				, gang_source_jobs_by_latest_arrival(_gang_source_jobs_by_latest_arrival)
 				, jobs_by_earliest_arrival(_jobs_by_earliest_arrival)
 				, jobs_by_deadline(_jobs_by_deadline)
-				, _predecessors(jobs.size())
-				, predecessors(_predecessors)
-				, _predecessors_suspensions(jobs.size())
-				, _successors_suspensions(jobs.size())
-				, predecessors_suspensions(_predecessors_suspensions)
-				, successors_suspensions(_successors_suspensions)
+				, _must_start_predecessors(jobs.size())
+				, must_start_predecessors(_must_start_predecessors)
+				, _must_finish_predecessors(jobs.size())
+				, must_finish_predecessors(_must_finish_predecessors)
+				, _inter_job_constraints(jobs.size())
+				, inter_job_constraints(_inter_job_constraints)
 				, abort_actions(jobs.size(), NULL)
 			{
 				for (const auto& e : edges) {
-					_predecessors_suspensions[e.get_toIndex()].push_back({ &jobs[e.get_fromIndex()], e.get_suspension() });
-					_predecessors[e.get_toIndex()].push_back(e.get_fromIndex());
-					_successors_suspensions[e.get_fromIndex()].push_back({ &jobs[e.get_toIndex()], e.get_suspension() });
+					if (e.get_type() == start_to_start) {
+						_inter_job_constraints[e.get_fromIndex()].start_to_successors_start.push_back({ &jobs[e.get_toIndex()], e.get_delay() });
+						_inter_job_constraints[e.get_toIndex()].predecessors_start_to_start.push_back({ &jobs[e.get_fromIndex()], e.get_delay() });
+						_must_start_predecessors[e.get_toIndex()].push_back(e.get_fromIndex());
+					}
+					if (e.get_type() == finish_to_start) {
+						_inter_job_constraints[e.get_fromIndex()].finish_to_successors_start.push_back({ &jobs[e.get_toIndex()], e.get_delay() });
+						_inter_job_constraints[e.get_toIndex()].predecessors_finish_to_start.push_back({ &jobs[e.get_fromIndex()], e.get_delay() });
+						_must_finish_predecessors[e.get_toIndex()].push_back(e.get_fromIndex());
+					}
 				}
 
 				for (const Job<Time>& j : jobs) {
-					if (_predecessors_suspensions[j.get_job_index()].size() > 0) {
+					const Inter_job_constraints& job_suspensions = _inter_job_constraints[j.get_job_index()];
+					if (job_suspensions.predecessors_finish_to_start.size() > 0 || job_suspensions.predecessors_start_to_start.size() > 0) {
 						_successor_jobs_by_latest_arrival.insert({ j.latest_arrival(), &j });
 					}
 					else if (j.get_min_parallelism() == 1) {
@@ -120,14 +162,14 @@ namespace NP {
 				return jobs.size();
 			}
 
-			const Job_precedence_set& predecessors_of(const Job<Time>& j) const
+			const Job_precedence_set& must_start_predecessors_of(Job_index j) const
 			{
-				return predecessors[j.get_job_index()];
+				return must_start_predecessors[j];
 			}
 
-			const Job_precedence_set& predecessors_of(Job_index j) const
+			const Job_precedence_set& must_finish_predecessors_of(Job_index j) const
 			{
-				return predecessors[j];
+				return must_finish_predecessors[j];
 			}
 
 			const Abort_action<Time>* abort_action_of(Job_index j) const
@@ -140,14 +182,20 @@ namespace NP {
 			Interval<Time> ready_times(const State& s, const Job<Time>& j) const
 			{
 				Interval<Time> r = j.arrival_window();
-				for (const auto& pred : predecessors_suspensions[j.get_job_index()])
+				const auto& cstr = inter_job_constraints[j.get_job_index()];
+				for (const auto& pred : cstr.predecessors_start_to_start)
 				{
-					auto pred_idx = pred.first->get_job_index();
-					auto pred_susp = pred.second;
+					Interval<Time> st{ 0, 0 };
+					s.get_start_times(pred.reference_job->get_job_index(), st);
+					r.lower_bound(st.min() + pred.delay.min());
+					r.extend_to(st.max() + pred.delay.max());
+				}
+				for (const auto& pred : cstr.predecessors_finish_to_start)
+				{
 					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred_idx, ft);
-					r.lower_bound(ft.min() + pred_susp.min());
-					r.extend_to(ft.max() + pred_susp.max());
+					s.get_finish_times(pred.reference_job->get_job_index(), ft);
+					r.lower_bound(ft.min() + pred.delay.min());
+					r.extend_to(ft.max() + pred.delay.max());
 				}
 				return r;
 			}
@@ -182,20 +230,41 @@ namespace NP {
 					latest_ready_high = std::max(latest_ready_high, s.core_availability(j_high.get_min_parallelism()).max());
 				}
 
-				// j is not ready until all its predecessors have completed, and their corresponding suspension delays are over.
-				// But, since we are assuming that `j_low` is dispatched next and all predecessors of `j` have been dispatched,
-				// we can disregard some of them.
-				for (const auto& pred : predecessors_suspensions[j_high.get_job_index()])
+				// j_high is not ready until all its predecessors have completed, and their corresponding delays are over.
+				// But, since we are assuming that `j_low` is dispatched next and all predecessors of `j_high` have been dispatched,
+				// we can disregard some of the predecessors.
+				const auto& cstr = inter_job_constraints[j_high.get_job_index()];
+				for (const auto& prec : cstr.predecessors_start_to_start)
 				{
-					const auto high_suspension = pred.second;
-					auto pred_idx = pred.first->get_job_index();
+					const auto delay_max = prec.delay.max();
+					// Since all predecessors must have been dispatched already, we can disregard
+					// this constraint if there is no delay between the predecessor's start and j_high's start
+					if (delay_max == 0) continue;
+
+					const auto pred_idx = prec.reference_job->get_job_index();
+					// skip if its also a predecessor of j_low and the delay to j_low's start can not be smaller than the delay to j_high's start
+					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(pred_idx);
+					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max) continue;
+
+					Time min_f2s_delay = inter_job_constraints[j_low].get_min_delay_after_finish_of(pred_idx);
+					if (min_f2s_delay != -1 && min_f2s_delay + prec.reference_job->least_exec_time() >= delay_max) continue;
+
+					Interval<Time> st{ 0, 0 };
+					s.get_start_times(pred_idx, st);
+					latest_ready_high = std::max(latest_ready_high, st.max() + delay_max);
+				}
+
+				for (const auto& prec : cstr.predecessors_finish_to_start)
+				{
+					const auto delay_max = prec.delay.max();
+					auto pred_idx = prec.reference_job->get_job_index();
 
 					Interval<Time> ft{ 0, 0 };
 					s.get_finish_times(pred_idx, ft);
 
-					// If the suspension is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
+					// If the delay is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
-					if (high_suspension.max() == 0) {
+					if (delay_max == 0) {
 
 						// If there is a single core, all predecessors of `j_high` must have finished when the core becomes available,
 						// since we assumed that all predecessors of `j_high` were already dispatched.
@@ -225,8 +294,8 @@ namespace NP {
 
 						// If at least one successor of j_pred has already been dispatched, then j_pred must have finished already.
 						bool can_disregard = false;
-						for (const auto &successor_suspension : successors_suspensions[pred_idx]) {
-							if (dispatched(n, *successor_suspension.first)) {
+						for (const auto& s : inter_job_constraints[pred_idx].finish_to_successors_start) {
+							if (dispatched(n, *s.reference_job)) {
 								can_disregard = true;
 								break;
 							}
@@ -234,37 +303,22 @@ namespace NP {
 						if (can_disregard) continue;
 					}
 
-					// If j_pred is a predecessor of both j_high and j_low, we can disregard it if the maximum suspension from j_pred to j_high
-					// is at most the minimum suspension from j_pred to j_low: susp_max(j_pred -> j_high) <= susp_min(j_pred -> j_low).
+					// If j_pred is a predecessor of both j_high and j_low, we can disregard it if the maximum delay from j_pred to j_high
+					// is at most the minimum delay from j_pred to j_low: delay_max(j_pred -> j_high) <= delay_min(j_pred -> j_low).
 					//
-					// To illustrate this, assume that j_low becomes ready at some time `t`. Then, due to the suspension, we know that
-					// j_pred must have finished no later than `t - susp_min(j_pred -> j_low)`, and that `j_pred` can only block `j_high`
-					// up to time `t + susp_max(j_pred -> j_high) - susp_min(j_pred -> j_low) <= t`. So either:
+					// To illustrate this, assume that j_low becomes ready at some time `t`. Then, due to the delay, we know that
+					// j_pred must have finished no later than `t - delay_min(j_pred -> j_low)`, and that `j_pred` can only block `j_high`
+					// up to time `t + delay_max(j_pred -> j_high) - delay_min(j_pred -> j_low) <= t`. So either:
 					// - j_high is ready when j_low becomes ready, so the assumption that j_low is dispatched next must be false, or
 					// - something else causes j_high to become ready later than j_low, so this constraint is not important
 					// Either way, this constraint can be disregarded.
-					bool can_disregard = false;
-					for (const auto &low_suspension : predecessors_suspensions[j_low]) {
-						// Note that the condition `susp_max(j_pred -> j_high) <= susp_min(j_pred -> j_low)` will be true if and only if there
-						// exists a constraint from j_pred to j_low whose *minimum* suspension is at least `susp_max(j_pred -> j_high)`. So we can
-						// stop searching as soon as we find one such constraint.
-						if (low_suspension.first->get_job_index() == pred_idx && low_suspension.second.min() >= high_suspension.max()) {
-							can_disregard = true;
-							break;
-						}
-					}
-					if (can_disregard) {
-						// Disregards *this* constraint, but other constraints from j_pred to j_high in predecessors_suspensions[j_high.get_job_index()]
-						// will be evaluated in their own iteration of this loop.
-						//
-						// Note that only the constraint with the largest *maximum* suspension from j_pred to j_high is important for
-						// the computation of susp_max(j_pred -> j_high), and that this is also the only constraint from j_pred to j_high that could
-						// affect the final value of latest_ready_high. Therefor, it is irrelevant whether other constraints from j_pred to j_high
-						// are disregarded.
-						continue;
-					}
+					Time min_f2s_delay = inter_job_constraints[j_low].get_min_delay_after_finish_of(pred_idx);
+					if (min_f2s_delay != -1 && min_f2s_delay >= delay_max) continue;
 
-					latest_ready_high = std::max(latest_ready_high, ft.max() + high_suspension.max());
+					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(pred_idx);
+					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max + prec.reference_job->least_exec_time()) continue;
+
+					latest_ready_high = std::max(latest_ready_high, ft.max() + delay_max);
 				}
 				return latest_ready_high;
 			}
