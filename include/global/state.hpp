@@ -143,7 +143,7 @@ namespace NP {
 				unsigned int ncores = 1)
 			{
 				const auto& constraints = state_space_data.inter_job_constraints;
-				const Job_precedence_set & finished_predecessors = state_space_data.must_finish_predecessors_of(j);
+				const Job_precedence_set & finished_predecessors = state_space_data.get_finished_jobs_if_starts(j);
 				// update the set of certainly running jobs and
 				// get the number of cores certainly used by active predecessors
 				int n_prec = update_certainly_running_jobs_and_get_num_prec(from, j, start_times, finish_times, ncores, finished_predecessors);
@@ -229,7 +229,7 @@ namespace NP {
 				unsigned int ncores = 1)
 			{
 				const auto& constraints = state_space_data.inter_job_constraints;
-				const Job_precedence_set & finished_predecessors = state_space_data.must_finish_predecessors_of(j);
+				const Job_precedence_set & finished_predecessors = state_space_data.get_finished_jobs_if_starts(j);
 				// update the set of certainly running jobs and
 				// get the number of cores certainly used by active predecessors
 				certain_jobs.clear();
@@ -302,15 +302,17 @@ namespace NP {
 				}
 			}
 
-			void get_start_times(Job_index j, Interval<Time>& stimes) const
+			bool get_start_times(Job_index j, Interval<Time>& stimes) const
 			{
 				int offset = jst_find(j);
 				if (offset < job_start_times.size() && job_start_times[offset].first == j)
 				{
 					stimes = job_start_times[offset].second;
+					return true;
 				}
 				else {
 					stimes = Interval<Time>{ 0, Time_model::constants<Time>::infinity() };
+					return false;
 				}
 			}
 
@@ -726,6 +728,20 @@ namespace NP {
 						get_finish_times(pred.reference_job->get_job_index(), ftimes);
 						ready_time = std::max(ready_time, ftimes.max() + pred.delay.max());
 					}
+					for (const auto& excl : constraints[rj->get_job_index()].between_starts)
+					{
+						Interval<Time> stimes(0, 0);
+						// if it has started then we account for the constraint
+						if( get_start_times(excl.reference_job->get_job_index(), stimes) )
+							ready_time = std::max(ready_time, stimes.max() + excl.delay.max());
+					}
+					for (const auto& excl : constraints[rj->get_job_index()].between_executions)
+					{
+						Interval<Time> ftimes(0, 0);
+						// if it has executed then we account for the exclusion constraint
+						if( get_finish_times(excl.reference_job->get_job_index(), ftimes) )
+							ready_time = std::max(ready_time, ftimes.max() + excl.delay.max());
+					}
 					earliest_certain_successor_job_dispatch =
 						std::min(earliest_certain_successor_job_dispatch, ready_time);
 				}
@@ -1115,11 +1131,23 @@ namespace NP {
 				return scheduled_jobs.contains(j);
 			}
 
-			const bool job_ready(const Job_precedence_set& predecessors) const
+			bool is_ready(const Job<Time>& j) const
 			{
-				for (auto j : predecessors)
-					if (!scheduled_jobs.contains(j))
+				return scheduled_jobs.contains(j.get_job_index());
+			}
+
+			bool is_ready(const Job_index j, const Inter_job_constraints& constraints) const
+			{
+				for (const auto& pred : constraints.predecessors_start_to_start)
+				{
+					if (!scheduled_jobs.contains(pred.reference_job->get_job_index()))
 						return false;
+				}
+				for (const auto& pred : constraints.predecessors_finish_to_start)
+				{
+					if (!scheduled_jobs.contains(pred.reference_job->get_job_index()))
+						return false;
+				}
 				return true;
 			}
 
@@ -1331,57 +1359,15 @@ namespace NP {
 
 				for (const auto& succ : constraints[j].start_to_successors_start)
 				{
-					bool ready = true;
-					const Job_index succ_index = succ.reference_job->get_job_index();
-					for (const auto& pred : constraints[succ_index].predecessors_start_to_start)
-					{
-						const Job_index from_job = pred.reference_job->get_job_index();
-						if (from_job != j && !scheduled_jobs.contains(from_job))
-						{
-							ready = false;
-							break;
-						}
-					}
-					if (!ready) continue;
-
-					for (const auto& pred : constraints[succ_index].predecessors_finish_to_start)
-					{
-						const Job_index from_job = pred.reference_job->get_job_index();
-						if (from_job != j && !scheduled_jobs.contains(from_job))
-						{
-							ready = false;
-							break;
-						}
-					}
-					if (ready)
+					auto succ_index = succ.reference_job->get_job_index();
+					if (is_ready(succ_index, constraints[succ_index]))
 						ready_successor_jobs.push_back(succ.reference_job);
 				}
 
 				for (const auto& succ : constraints[j].finish_to_successors_start)
 				{
-					bool ready = true;
-					const Job_index succ_index = succ.reference_job->get_job_index();
-					for (const auto& pred : constraints[succ_index].predecessors_start_to_start)
-					{
-						const Job_index from_job = pred.reference_job->get_job_index();
-						if (from_job != j && !scheduled_jobs.contains(from_job))
-						{
-							ready = false;
-							break;
-						}
-					}
-					if (!ready) continue;
-					
-					for (const auto& pred : constraints[succ_index].predecessors_finish_to_start)
-					{
-						const Job_index from_job = pred.reference_job->get_job_index();
-						if (from_job != j && !scheduled_jobs.contains(from_job))
-						{
-							ready = false;
-							break;
-						}
-					}
-					if (ready)
+					auto succ_index = succ.reference_job->get_job_index();
+					if (is_ready(succ_index, constraints[succ_index]))
 						ready_successor_jobs.push_back(succ.reference_job);
 				}
 			}
@@ -1396,6 +1382,16 @@ namespace NP {
 
 				// we only need to add j to jobs_with_pending_start_succ if it has successors with start to start constraints
 				bool added_j = constraints[j].start_to_successors_start.empty();
+				if (added_j) {
+					for (const auto& excl : constraints[j].between_starts) {
+						// if it has started then we account for the constraint
+						if (!scheduled_jobs.contains(excl.reference_job->get_job_index()))
+						{
+							added_j = false;
+							break;
+						}
+					}
+				}
 				for (Job_index job : from.jobs_with_pending_start_succ)
 				{
 					if (!added_j && job > j)
@@ -1422,6 +1418,16 @@ namespace NP {
 
 				// we only need to add j to jobs_with_pending_finish_succ if it has successors with start to start constraints
 				added_j = constraints[j].finish_to_successors_start.empty();
+				if (added_j) {
+					for (const auto& excl : constraints[j].between_executions) {
+						// if it has started then we account for the constraint
+						if (!scheduled_jobs.contains(excl.reference_job->get_job_index()))
+						{
+							added_j = false;
+							break;
+						}
+					}
+				}
 				for (Job_index job : from.jobs_with_pending_finish_succ)
 				{
 					if (!added_j && job > j)

@@ -136,9 +136,10 @@ TEST_CASE("[cores init] Uniproc equivalence between analyses") {
 	auto dag_in = std::istringstream("\n");
 	auto aborts_in = std::istringstream("\n");
 
+	NP::Job<dtime_t>::Job_set jobs = NP::parse_csv_job_file<dtime_t>(in);
 	NP::Scheduling_problem<dtime_t> prob0{
-		NP::parse_csv_job_file<dtime_t>(in),
-		NP::parse_precedence_file<dtime_t>(susp_dag_in) };
+		jobs,
+		NP::parse_precedence_file<dtime_t>(susp_dag_in, jobs) };
 
 	NP::Analysis_options opts;
 
@@ -150,9 +151,10 @@ TEST_CASE("[cores init] Uniproc equivalence between analyses") {
 	auto susp_dag_in_1 = std::istringstream(uniproc_sn_susp_dag_file);
 	auto pltform_spec_one_core_in = std::istringstream(platform_spec_one_core);
 
+	NP::Job<dtime_t>::Job_set jobs_minus1 = NP::parse_csv_job_file<dtime_t>(in_minus1);
 	NP::Scheduling_problem<dtime_t> prob1{
-		NP::parse_csv_job_file<dtime_t>(in_minus1),
-		NP::parse_precedence_file<dtime_t>(susp_dag_in_1),
+		jobs_minus1,
+		NP::parse_precedence_file<dtime_t>(susp_dag_in_1, jobs_minus1),
 		NP::parse_platform_spec_csv<dtime_t>(pltform_spec_one_core_in)};
 
 	opts.be_naive = false;
@@ -176,9 +178,10 @@ TEST_CASE("[cores init] Multiproc equivalence between analyses") {
 	auto dag_in = std::istringstream("\n");
 	auto aborts_in = std::istringstream("\n");
 
+	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
 	NP::Scheduling_problem<dtime_t> prob0{
-		NP::parse_csv_job_file<dtime_t>(in),
-		NP::parse_precedence_file<dtime_t>(susp_dag_in),
+		jobs,
+		NP::parse_precedence_file<dtime_t>(susp_dag_in, jobs),
 		2 };
 
 	NP::Analysis_options opts;
@@ -191,9 +194,10 @@ TEST_CASE("[cores init] Multiproc equivalence between analyses") {
 	auto susp_dag_in_1 = std::istringstream(uniproc_sn_susp_dag_file);
 	auto platform_spec_two_cores_in_1 = std::istringstream(platform_spec_two_cores_1);
 
+	auto jobs_minus1 = NP::parse_csv_job_file<dtime_t>(in_minus1);
 	NP::Scheduling_problem<dtime_t> prob1{
-		NP::parse_csv_job_file<dtime_t>(in_minus1),
-		NP::parse_precedence_file<dtime_t>(susp_dag_in_1),
+		jobs_minus1,
+		NP::parse_precedence_file<dtime_t>(susp_dag_in_1, jobs_minus1),
 		NP::parse_platform_spec_csv<dtime_t>(platform_spec_two_cores_in_1) };
 
 	opts.be_naive = false;
@@ -204,9 +208,10 @@ TEST_CASE("[cores init] Multiproc equivalence between analyses") {
 	susp_dag_in_1 = std::istringstream(uniproc_sn_susp_dag_file);
 	auto platform_spec_two_cores_in_2 = std::istringstream(platform_spec_two_cores_2);
 
+	NP::Job<dtime_t>::Job_set jobs2 = NP::parse_csv_job_file<dtime_t>(in_minus2);
 	NP::Scheduling_problem<dtime_t> prob2{
-		NP::parse_csv_job_file<dtime_t>(in_minus2),
-		NP::parse_precedence_file<dtime_t>(susp_dag_in_1),
+		jobs2,
+		NP::parse_precedence_file<dtime_t>(susp_dag_in_1, jobs2),
 		NP::parse_platform_spec_csv<dtime_t>(platform_spec_two_cores_in_2) };
 
 	opts.be_naive = false;

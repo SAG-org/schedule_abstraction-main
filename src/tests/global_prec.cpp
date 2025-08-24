@@ -90,11 +90,9 @@ const std::string ts4_edges_bad2 =
 
 TEST_CASE("[global-prec] taskset-1") {
 	auto dag_in = std::istringstream(ts1_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts1_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
-
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 	NP::Analysis_options opts;
 
@@ -128,11 +126,9 @@ TEST_CASE("[global-prec] taskset-1") {
 
 TEST_CASE("[global-prec] taskset-2") {
 	auto dag_in = std::istringstream(ts2_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts2_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
-
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 	NP::Analysis_options opts;
 
@@ -173,11 +169,9 @@ TEST_CASE("[global-prec] taskset-2") {
 
 TEST_CASE("[global-prec] taskset-3") {
 	auto dag_in = std::istringstream(ts3_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts3_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
-
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 	NP::Analysis_options opts;
 
@@ -192,13 +186,11 @@ TEST_CASE("[global-prec] taskset-4 with signal-at-start") {
 	auto dag_bad1 = std::istringstream(ts4_edges_bad1);
 	auto dag_bad2 = std::istringstream(ts4_edges_bad2);
 	auto dag_good = std::istringstream(ts4_edges_good);
-	auto prec_bad1 = NP::parse_precedence_file<dtime_t>(dag_bad1);
-	auto prec_bad2 = NP::parse_precedence_file<dtime_t>(dag_bad2);
-	auto prec_good = NP::parse_precedence_file<dtime_t>(dag_good);
-
 	auto in = std::istringstream(ts4_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
-
+	auto prec_bad1 = NP::parse_precedence_file<dtime_t>(dag_bad1, jobs);
+	auto prec_bad2 = NP::parse_precedence_file<dtime_t>(dag_bad2, jobs);
+	auto prec_good = NP::parse_precedence_file<dtime_t>(dag_good, jobs);
 	NP::Scheduling_problem<dtime_t> prob_bad0{jobs, 2};
 	NP::Scheduling_problem<dtime_t> prob_bad1{jobs, prec_bad1, 2};
 	NP::Scheduling_problem<dtime_t> prob_bad2{jobs, prec_bad2, 2};
@@ -231,10 +223,9 @@ const std::string ts5_edges =
 
 TEST_CASE("[global-prec] taskset-5 regression test for false schedulable conclusion (1)") {
 	auto dag_in = std::istringstream(ts5_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts5_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	REQUIRE(prec[0].get_max_delay() == 100);
 
@@ -261,10 +252,9 @@ const std::string ts6_edges =
 
 TEST_CASE("[global-prec] taskset-6 regression test for false schedulable conclusion (2)") {
 	auto dag_in = std::istringstream(ts6_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts6_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -295,18 +285,17 @@ const std::string ts7_edges =
 
 TEST_CASE("[global-prec] taskset-7 check suspension pessimism (1)") {
 	auto dag_in = std::istringstream(ts7_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts7_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 16));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 16), jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -337,10 +326,9 @@ const std::string ts8_edges =
 
 TEST_CASE("[global-prec] taskset-8 check suspension pessimism (2)") {
 	auto dag_in = std::istringstream(ts8_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts8_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -378,10 +366,9 @@ const std::string ts9_edges =
 
 TEST_CASE("[global-prec] taskset-9 check suspension pessimism (3)") {
 	auto dag_in = std::istringstream(ts9_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts9_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -405,10 +392,9 @@ const std::string ts10_edges =
 
 TEST_CASE("[global-prec] taskset-10 regression test for false start-to-start schedulable conclusion (1)") {
 	auto dag_in = std::istringstream(ts10_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts10_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -432,10 +418,9 @@ const std::string ts11_edges =
 
 TEST_CASE("[global-prec] taskset-11 regression test for false start-to-start schedulable conclusion (2)") {
 	auto dag_in = std::istringstream(ts11_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts11_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -466,18 +451,17 @@ const std::string ts12_edges =
 
 TEST_CASE("[global-prec] taskset-12 check start-to-start suspension pessimism (1)") {
 	auto dag_in = std::istringstream(ts12_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts12_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 26), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 26), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -508,10 +492,9 @@ const std::string ts13_edges =
 
 TEST_CASE("[global-prec] taskset-13 check start-to-start suspension pessimism (2)") {
 	auto dag_in = std::istringstream(ts13_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts13_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
@@ -544,18 +527,17 @@ const std::string ts14_edges =
 
 TEST_CASE("[global-prec] taskset-14 check mixed start-to-start and finish-to-start suspension pessimism (1)") {
 	auto dag_in = std::istringstream(ts14_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts14_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(9, 15));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(9, 15), jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -568,18 +550,17 @@ const std::string ts15_edges =
 
 TEST_CASE("[global-prec] taskset-15 check mixed start-to-start and finish-to-start suspension pessimism (2)") {
 	auto dag_in = std::istringstream(ts15_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts14_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(19, 25), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(19, 25), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -603,18 +584,17 @@ const std::string ts16_edges =
 
 TEST_CASE("[global-prec] taskset-16 check 2-core pessimism") {
 	auto dag_in = std::istringstream(ts16_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts16_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[0] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 1));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[0] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 1), jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -644,18 +624,17 @@ const std::string ts17_edges =
 
 TEST_CASE("[global-prec] taskset-17 check transitivity pessimism (1)") {
 	auto dag_in = std::istringstream(ts17_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts17_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[3] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 62), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[3] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 62), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -698,24 +677,23 @@ const std::string ts18_edges =
 
 TEST_CASE("[global-prec] taskset-18 check transitivity pessimism (2)") {
 	auto dag_in = std::istringstream(ts18_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts18_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec.push_back(NP::Precedence_constraint<dtime_t>(jobs[2].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 0), NP::start_to_start));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec.push_back(NP::Precedence_constraint<dtime_t>(jobs[2].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 0), NP::start_to_start, jobs));
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 
-	prob.prec[4] = NP::Precedence_constraint<dtime_t>(jobs[2].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[4] = NP::Precedence_constraint<dtime_t>(jobs[2].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -742,10 +720,9 @@ const std::string ts19_edges =
 
 TEST_CASE("[global-prec] taskset-19 check transitivity pessimism (3)") {
 	auto dag_in = std::istringstream(ts19_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts19_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 4};
 
@@ -754,8 +731,8 @@ TEST_CASE("[global-prec] taskset-19 check transitivity pessimism (3)") {
 
 	// If the constraint from J0 to J2 gets suspension, it becomes possible that J3 starts before J2,
 	// causing J2 to miss its deadline...
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -783,10 +760,9 @@ const std::string ts20_edges =
 
 TEST_CASE("[global-prec] taskset-20 check transitivity pessimism (4)") {
 	auto dag_in = std::istringstream(ts20_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts20_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 3};
 
@@ -795,8 +771,8 @@ TEST_CASE("[global-prec] taskset-20 check transitivity pessimism (4)") {
 
 	// If the constraint from J0 to J2 gets suspension, it becomes possible that J3 starts before J2,
 	// causing J2 to miss its deadline...
-	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start);
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[1] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[2].get_id(), Interval<dtime_t>(0, 1), NP::start_to_start, jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -829,17 +805,17 @@ const std::string ts21_edges =
 
 TEST_CASE("[global-prec] taskset-21 check transitivity pessimism (5)") {
 	auto dag_in = std::istringstream(ts21_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
 	auto in = std::istringstream(ts21_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
 	// By adding a suspension delay of 21 time units between J68 and J64, it becomes possible that J44 is ready *before* J64,
 	// causing J64 to miss its deadline.
-	prob.prec[3] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 21));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[3] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[3].get_id(), Interval<dtime_t>(0, 21), jobs);
+	validate_prec_cstrnts(prob.prec);
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
 }
@@ -861,17 +837,16 @@ const std::string ts22_edges =
 
 TEST_CASE("[global-prec] taskset-22 check 2-core pessimism (1)") {
 	auto dag_in = std::istringstream(ts22_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts22_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
-	prob.prec[0] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 1));
-	validate_prec_cstrnts(prob.prec, prob.jobs);
+	prob.prec[0] = NP::Precedence_constraint<dtime_t>(jobs[0].get_id(), jobs[1].get_id(), Interval<dtime_t>(0, 1), jobs);
+	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
@@ -896,10 +871,9 @@ const std::string ts23_edges =
 
 TEST_CASE("[global-prec] taskset-23 check 2-core optimism (1)") {
 	auto dag_in = std::istringstream(ts23_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts23_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
@@ -917,11 +891,10 @@ const std::string ts24_jobs =
 ;
 
 TEST_CASE("[global-prec] taskset-24 check 2-core optimism (2)") {
-	auto dag_in = std::istringstream(ts23_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts24_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	auto dag_in = std::istringstream(ts23_edges);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
@@ -948,12 +921,10 @@ const std::string ts25_edges =
 ;
 
 TEST_CASE("[global-prec] taskset-25 check 2-core pessimism (2)") {
-	auto dag_in = std::istringstream(ts25_edges);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(ts25_jobs);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
-
+	auto dag_in = std::istringstream(ts25_edges);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 	NP::Scheduling_problem<dtime_t> prob{jobs, prec, 2};
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});

@@ -49,6 +49,7 @@ namespace NP {
 			typedef Scheduling_problem<Time> Problem;
 			typedef typename Scheduling_problem<Time>::Workload Workload;
 			typedef typename Scheduling_problem<Time>::Precedence_constraints Precedence_constraints;
+			typedef typename Scheduling_problem<Time>::Mutex_constraints Mutex_constraints;
 			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
 
@@ -67,7 +68,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
-				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -90,7 +91,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
-				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -298,6 +299,7 @@ namespace NP {
 			State_space(const Workload& jobs,
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
+				const Mutex_constraints& mutexes,
 				const std::vector<Interval<Time>>& cores_initial_state,
 				Merge_options merge_options,
 				double max_cpu_time = 0,
@@ -316,7 +318,7 @@ namespace NP {
 				, bool pruning_active = false
 				, const Pruning_condition& pruning_cond = Pruning_condition()
 #endif
-			)	: state_space_data(jobs, edges, aborts, num_cpus)
+			)	: state_space_data(jobs, edges, aborts, mutexes, num_cpus)
 				, aborted(false)
 				, timed_out(false)
 				, observed_deadline_miss(false)
@@ -681,11 +683,11 @@ namespace NP {
 			// assumes all predecessors of j have been dispatched
 			// NOTE: we don't use Interval<Time> here because the
 			//       Interval c'tor sorts its arguments.
-			std::pair<Time, Time> start_times(
-				const State& s, const Job<Time>& j, const Time t_wc, const Time t_high,
+			std::pair<Time, Time> start_times( const Node& n, const State& s, 
+				const Job<Time>& j, const Time t_wc, const Time t_high,
 				const Time t_avail, const unsigned int ncores = 1) const
 			{
-				auto rt = state_space_data.earliest_ready_time(s, j);
+				auto rt = state_space_data.earliest_ready_time(n, s, j);
 				auto at = s.core_availability(ncores).min();
 				Time est = std::max(rt, at);
 
@@ -773,7 +775,7 @@ namespace NP {
 							t_avail = s->core_availability(std::prev(it)->first).max();
 
 						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << std::endl);
-						auto _st = start_times(*s, j, t_wc, t_high, t_avail, p);
+						auto _st = start_times(*n, *s, j, t_wc, t_high, t_avail, p);
 						if (_st.first > t_wc || _st.first >= t_high || _st.first >= t_avail)
 							continue; // nope, not next job that can be dispatched in state s, try the next state.
 
