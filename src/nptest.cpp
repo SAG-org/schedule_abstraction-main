@@ -496,7 +496,7 @@ int main(int argc, char** argv)
 	      .set_default("");
 
 	parser.add_option("--excl").dest("excl_file")
-	      .help("name of the file that contains the job set's exclusion (mutex) constraints")
+	      .help("[experimental] name of the file that contains the job set's exclusion (mutex) constraints")
 	      .set_default("");
 
 	parser.add_option("-a", "--abort-actions").dest("abort_file")
@@ -629,6 +629,8 @@ int main(int argc, char** argv)
 		          << "with a single exclusion constraints file specified." 
 		          << std::endl;
 	}
+	else if (want_mutexes)
+		std::cout << "[**] Note: support for mutex constraints is only experimental for now." << std::endl;
 	excl_file = (const std::string&) options.get("excl_file");
 
 
