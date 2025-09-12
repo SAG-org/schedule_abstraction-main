@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8.0)
 
-project(NP_schedulabiliy_test VERSION 3.1.14 LANGUAGES CXX)
+project(NP_schedulabiliy_test VERSION 3.2.1 LANGUAGES CXX)
 
 include_directories(include)
 include_directories(lib/include)
@@ -11,6 +11,12 @@ option(USE_JE_MALLOC "Use the Facebook jemalloc scalable memory allocator" OFF)
 option(COLLECT_SCHEDULE_GRAPHS "Enable the collection of schedule graphs (disables parallel)" OFF)
 option(DEBUG "Enable debugging" OFF)
 option(USE_PRUNING "Enable pruning support during state-space exploration" OFF)
+option(ANALYSIS_EXTENSIONS "Enable analysis extensions for additional features (e.g., data age and reaction time in task chains analysis" OFF)
+
+if (ANALYSIS_EXTENSIONS)
+    add_compile_definitions(CONFIG_ANALYSIS_EXTENSIONS)
+    message(NOTICE "Analysis extensions enabled")
+endif ()
 
 if (USE_PRUNING)
     add_compile_definitions(CONFIG_PRUNING)

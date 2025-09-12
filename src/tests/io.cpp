@@ -79,8 +79,10 @@ TEST_CASE("[parser] JobID") {
 
 TEST_CASE("[parser] precedence constraint") {
 	auto in = std::istringstream(precedence_line);
-
-	auto c = NP::parse_precedence_constraint<dtime_t>(in);
+	NP::Job<dtime_t>::Job_set jobs;
+	jobs.push_back(NP::Job<dtime_t>{2, {0,0}, {{1,{0,0}}}, 10, 1, 0, 1}); // job id 2 task 1
+	jobs.push_back(NP::Job<dtime_t>{5, {0,0}, {{1,{0,0}}}, 10, 1, 1, 3}); // job id 5 task 3
+	auto c = NP::parse_precedence_constraint<dtime_t>(in, jobs);
 
 	CHECK(c.get_fromID().job == 2);
 	CHECK(c.get_fromID().task == 1);
@@ -90,14 +92,18 @@ TEST_CASE("[parser] precedence constraint") {
 
 TEST_CASE("[parser] too-short precedence constraint") {
 	auto in = std::istringstream(bad_precedence_line);
-
-	REQUIRE_THROWS_AS(NP::parse_precedence_constraint<dtime_t>(in), std::ios_base::failure);
+	NP::Job<dtime_t>::Job_set jobs;
+	jobs.push_back(NP::Job<dtime_t>{2, {0,0}, {{1,{0,0}}}, 10, 1, 0, 1});
+	jobs.push_back(NP::Job<dtime_t>{5, {0,0}, {{1,{0,0}}}, 10, 1, 1, 3});
+	REQUIRE_THROWS_AS(NP::parse_precedence_constraint<dtime_t>(in, jobs), std::ios_base::failure);
 }
 
 TEST_CASE("[parser] invalid precedence constraint") {
 	auto in = std::istringstream(bad_precedence_line2);
-
-	REQUIRE_THROWS_AS(NP::parse_precedence_constraint<dtime_t>(in), std::ios_base::failure);
+	NP::Job<dtime_t>::Job_set jobs;
+	jobs.push_back(NP::Job<dtime_t>{2, {0,0}, {{1,{0,0}}}, 10, 1, 0, 1});
+	jobs.push_back(NP::Job<dtime_t>{5, {0,0}, {{1,{0,0}}}, 10, 1, 1, 3});
+	REQUIRE_THROWS_AS(NP::parse_precedence_constraint<dtime_t>(in, jobs), std::ios_base::failure);
 }
 
 const std::string precedence_file =
@@ -108,10 +114,14 @@ const std::string precedence_file =
 
 TEST_CASE("[parser] precedence file") {
 	auto in = std::istringstream(precedence_file);
+	NP::Job<dtime_t>::Job_set jobs;
+	jobs.push_back(NP::Job<dtime_t>{1, {0,0}, {{1,{0,0}}}, 10, 1, 0, 1});
+	jobs.push_back(NP::Job<dtime_t>{2, {0,0}, {{1,{0,0}}}, 10, 1, 1, 1});
+	jobs.push_back(NP::Job<dtime_t>{13, {0,0}, {{1,{0,0}}}, 10, 1, 2, 3});
+	jobs.push_back(NP::Job<dtime_t>{1, { 0,0 }, { {1,{0,0}} }, 10, 1, 3, 2});
+	auto prec = NP::parse_precedence_file<dtime_t>(in, jobs);
 
-	auto prec = NP::parse_precedence_file<dtime_t>(in);
-
-	CHECK(prec.size() == 3);
+	REQUIRE(prec.size() == 3);
 	CHECK(prec[0].get_fromID().task  == 1);
 	CHECK(prec[0].get_fromID().job   == 1);
 	CHECK(prec[0].get_toID().task == 1);
@@ -126,16 +136,57 @@ TEST_CASE("[parser] precedence file") {
 	CHECK(prec[2].get_fromID().job   == 1);
 	CHECK(prec[2].get_toID().task == 3);
 	CHECK(prec[2].get_toID().job  == 13);
+
+	for (const auto &constraint : prec) CHECK(constraint.get_type() == NP::finish_to_start);
+}
+
+const std::string precedence_file_with_signal_at =
+"Predecessor TID,	Predecessor JID,	Successor TID,	Successor JID,	Sus Min,	Sus Max,	Type\n"
+"              1,                 1,               1,             2,	1,			2,			s\n"
+"              1,                 1,               2,             1,	3,			4,			f\n"
+"              2,                 1,               3,            13,	0,			0,			s\n";
+
+TEST_CASE("[parser] precedence file with signal at column") {
+	auto in = std::istringstream(precedence_file_with_signal_at);
+	NP::Job<dtime_t>::Job_set jobs;
+	jobs.push_back(NP::Job<dtime_t>{1, {0,0}, {{1,{0,0}}}, 10, 1, 0, 1});
+	jobs.push_back(NP::Job<dtime_t>{2, {0,0}, {{1,{0,0}}}, 10, 1, 1, 1});
+	jobs.push_back(NP::Job<dtime_t>{13, {0,0}, {{1,{0,0}}}, 10, 1, 2, 3});
+	jobs.push_back(NP::Job<dtime_t>{1, { 0,0 }, { {1,{0,0}} }, 10, 1, 3, 2});
+	auto prec = NP::parse_precedence_file<dtime_t>(in, jobs);
+
+	REQUIRE(prec.size() == 3);
+	CHECK(prec[0].get_fromID().task  == 1);
+	CHECK(prec[0].get_fromID().job   == 1);
+	CHECK(prec[0].get_toID().task == 1);
+	CHECK(prec[0].get_toID().job  == 2);
+	CHECK(prec[0].get_min_delay() == 1);
+	CHECK(prec[0].get_max_delay() == 2);
+	CHECK(prec[0].get_type() == NP::start_to_start);
+
+	CHECK(prec[1].get_fromID().task  == 1);
+	CHECK(prec[1].get_fromID().job   == 1);
+	CHECK(prec[1].get_toID().task == 2);
+	CHECK(prec[1].get_toID().job  == 1);
+	CHECK(prec[1].get_min_delay() == 3);
+	CHECK(prec[1].get_max_delay() == 4);
+	CHECK(prec[1].get_type() == NP::finish_to_start);
+
+	CHECK(prec[2].get_fromID().task  == 2);
+	CHECK(prec[2].get_fromID().job   == 1);
+	CHECK(prec[2].get_toID().task == 3);
+	CHECK(prec[2].get_toID().job  == 13);
+	CHECK(prec[2].get_min_delay() == 0);
+	CHECK(prec[2].get_max_delay() == 0);
+	CHECK(prec[2].get_type() == NP::start_to_start);
 }
 
 TEST_CASE("[parser] invalid precedence reference") {
-	auto dag_in = std::istringstream(precedence_file);
-	auto prec = NP::parse_precedence_file<dense_t>(dag_in);
-
 	auto in = std::istringstream(four_lines);
 	auto jobs = NP::parse_csv_job_file<dense_t>(in);
+	auto dag_in = std::istringstream(precedence_file);
 
-	REQUIRE_THROWS_AS(NP::validate_prec_cstrnts<dense_t>(prec, jobs), NP::InvalidJobReference);
+	REQUIRE_THROWS_AS(NP::parse_precedence_file<dense_t>(dag_in, jobs), NP::InvalidJobReference);
 }
 
 const std::string sequential_task_prec_file =
@@ -144,13 +195,12 @@ const std::string sequential_task_prec_file =
 "            920,                 2,             920,             3\n";
 
 TEST_CASE("[parser] valid precedence reference") {
-	auto dag_in = std::istringstream(sequential_task_prec_file);
-	auto prec = NP::parse_precedence_file<dense_t>(dag_in);
-
 	auto in = std::istringstream(four_lines);
 	auto jobs = NP::parse_csv_job_file<dense_t>(in);
+	auto dag_in = std::istringstream(sequential_task_prec_file);
+	auto prec = NP::parse_precedence_file<dense_t>(dag_in, jobs);
 
-	NP::validate_prec_cstrnts<dense_t>(prec, jobs);
+	NP::validate_prec_cstrnts<dense_t>(prec);
 	// dummy check; real check is that previous line didn't throw an exception
 	CHECK(true);
 }

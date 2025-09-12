@@ -19,7 +19,8 @@ namespace NP {
         public:
             Secateur(const Pruning_condition& cond)
                 : prune_jobs(cond.prune_jobs),
-                stop_job_sets(cond.stop_job_sets)
+                stop_job_sets(cond.stop_job_sets),
+                time_limit(cond.time_limit)
             {
             }
 
@@ -57,12 +58,18 @@ namespace NP {
                     }
                 }
 
+                // Time-based pruning: if the earliest time we can dispatch `job` in this node is after the time limit, prune
+                if (time_limit > 0 && (job.earliest_arrival() > static_cast<Time>(time_limit) || n.finish_range().min() > static_cast<Time>(time_limit))) {
+                    return true;
+                }
+
                 return false;
             }
 
         private:
             Index_set prune_jobs;
             std::multimap<Job_index, std::vector<Job_index>> stop_job_sets;
+            long long time_limit; // 0 means no time limit
         };
     }
 }

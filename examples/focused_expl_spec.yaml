@@ -3,6 +3,8 @@ Focus:
  jobset: [[1,1],[1,2],[2,1],[2,2]]
  # only explore paths in the SAG that contain exclusively jobs of the Tasks 1 and 2 
  taskset: [1, 2]
+ # limit the exploration to events that happen before or at time 457
+ time: 457
 
 Prune:
  # stop exploring paths that dispatched one job of Task 3 or 4 or 5

@@ -1,6 +1,6 @@
 # NP Schedulability Test
 
-This repository contains the implementations of schedulability tests for **sets of non-preemptive moldable gang jobs** with **precedence constraints** and **self-suspension delays** scheduled on either **uniprocessor** or **globally scheduled identical multiprocessors**. The analyses are described in the following papers:
+This repository contains the implementations of schedulability tests for **sets of non-preemptive moldable gang jobs** with **precedence constraints**, **self-suspension delays**, **dispatch ordering constraints** and **mutual exclusions** scheduled on either **uniprocessor** or **globally scheduled identical multiprocessors**. The analyses are described in the following papers:
 
 - M. Nasri and B. Brandenburg, “[An Exact and Sustainable Analysis of Non-Preemptive Scheduling](https://people.mpi-sws.org/~bbb/papers/pdf/rtss17.pdf)”, *Proceedings of the 38th IEEE Real-Time Systems Symposium (RTSS 2017)*, pp. 12–23, December 2017.
 - M. Nasri, G. Nelissen, and B. Brandenburg, “[Response-Time Analysis of Limited-Preemptive Parallel DAG Tasks under Global Scheduling](http://drops.dagstuhl.de/opus/volltexte/2019/10758/pdf/LIPIcs-ECRTS-2019-21.pdf)”, *Proceedings of the 31st Euromicro Conference on Real-Time Systems (ECRTS 2019)*, pp. 21:1–21:23, July 2019.
@@ -102,7 +102,7 @@ $ ./runtests
 
 ## Input Format
 
-The tool operates on CSV files with a fixed column order. There are four main input formats: *job sets*, *precedence constraints*, *abort actions*, and *platform specification*. YAML input is also supported for job sets, precedence constraints, and platform specifications (see below for details). **YAML abort files are not yet supported.**
+The tool operates on CSV files with a fixed column order. There are five main input formats: *job sets*, *precedence constraints*, *abort actions*, *mutual exclusions* and *platform specification*. YAML input is also supported for job sets, precedence constraints, and platform specifications (see below for details). **YAML abort files are not yet supported.**
 
 ### Job Sets
 
@@ -143,10 +143,33 @@ A precedent constraints CSV files define a DAG on the set of jobs provided in a 
 4. **Successor job ID** - the job ID of the target of the edge
 5. **Delay min** [optional] - the minimum delay between the execution completion of the predecessor job to the release of the successor job 
 6. **Delay max** [optional] - the maximum delay between the execution completion of the predecessor job to the release of the successor job
+7. **Type** [optional] - must be either:
+   - `f` (default): the successor job waits until the predecessor job has **finished**
+   - `s`: the successor job waits until the predecessor job has **started**
 
 An example precedent constraints file is provided in the `examples/` folder (e.g., [examples/fig1a.prec.csv](examples/fig1a.prec.csv)).
 
 YAML precedence constraint files are also supported. If a precedence file has a `.yaml` or `.yml` extension, it will be parsed as YAML. Precedence constraints can be specified in the YAML job set file directly, in which case a separate precedence file is not needed.
+
+### Mutual exclusions [experimental]
+The tool supports two different types of mutual exclusions:
+- **mutual *execution* exclusions**: they are the usual mutex. Two jobs with a mutual exclusion cannot execute at the same time (but their ordering is not constrained). Additionally we can specify a delay between the execution of the two jobs (for example because there is a cool off period to access a shared resource).
+- **mutual *start* exclusions**: they prevent two jobs to start at the same time (but their ordering is not constrained). A delay strictly longer than 0 between the start of the two jobs MUST be specified. This can model access to shared resources that can handle access requests only sequentially but can run jobs in parallel. It can also model mutex that are only accessed at the beginning of a job and released before its end.
+
+A mutual exclusion constraint specification file can be provided with the `--excl` command line flag.
+
+The CSV format of a mutual exclusion constraints file is:
+1. **First job task ID** 
+2. **First job job ID** 
+3. **Second job task ID** 
+4. **Second job job ID** 
+5. **Delay min** [optional] - the minimum delay between the start/completion of one job to the start of the other job (note that jobs execution order is not defined)
+6. **Delay max** [optional] - the maximum delay between the start/completion of one job to the start of the other job (note that jobs execution order is not defined)
+7. **Type** [optional] - must be either:
+   - `e` (default): it is an mutual **execution** exclusion
+   - `s`: it is an mutual **start** exclusion. If the type is `s` then the delay min and delay max field are not optional anymore.
+
+An example mutual exclusion constraints file is provided in the `examples/` folder (e.g., [examples/excl_example.csv](examples/excl_example.csv)).
 
 ### Abort Actions
 

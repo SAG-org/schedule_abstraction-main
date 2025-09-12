@@ -8,6 +8,7 @@
 #include "time.hpp"
 #include "jobs.hpp"
 #include "precedence.hpp"
+#include "exclusion.hpp"
 #include "aborts.hpp"
 #include "yaml-cpp/yaml.h"
 #include "logger.hpp"
@@ -120,12 +121,14 @@ namespace NP {
 		}			
 	}
 
-	//Functions that help parse selfsuspending tasks file
+	//Function that helps parse selfsuspending tasks file
 	template<class Time>
-	Precedence_constraint<Time> parse_precedence_constraint(std::istream &in)
+	Precedence_constraint<Time> parse_precedence_constraint(std::istream &in, typename NP::Job<Time>::Job_set& jobs)
 	{
 		unsigned long from_tid, from_jid, to_tid, to_jid;
-		Time sus_min=0, sus_max=0;
+		Time delay_min=0, delay_max=0;
+		std::string signal_type;
+		Precedence_type type = finish_to_start;
 
 		std::ios_base::iostate state_before = in.exceptions();
 
@@ -141,20 +144,32 @@ namespace NP {
 		next_field(in);
 		if (more_fields_in_line(in))
 		{
-			in >> sus_min;
+			in >> delay_min;
 			next_field(in);
-			in >> sus_max;
+			in >> delay_max;
+			if (delay_max < delay_min)
+				throw std::invalid_argument("delay_min > delay_max for job T" + from_tid + 'J' + from_jid);
+		}
+
+		next_field(in);
+		if (more_fields_in_line(in))
+		{
+			in >> signal_type;
+			std::transform(signal_type.begin(), signal_type.end(), signal_type.begin(), [](unsigned char c){ return std::tolower(c); });
+			if (signal_type == "s") type = start_to_start;
+			else if (signal_type != "f") throw std::invalid_argument("Unexpected type: must be 's' or 'f'");
 		}
 
 		in.exceptions(state_before);
 
 		return Precedence_constraint<Time>{JobID{from_jid, from_tid},
 											JobID{to_jid, to_tid},
-		                          			Interval<Time>{sus_min, sus_max}};
+											Interval<Time>{delay_min, delay_max},
+											type, jobs};
 	}
 
 	template<class Time>
-	std::vector<Precedence_constraint<Time>> parse_precedence_file(std::istream& in)
+	std::vector<Precedence_constraint<Time>> parse_precedence_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
 	{
 		// skip column headers
 		next_line(in);
@@ -163,14 +178,14 @@ namespace NP {
 		// parse all rows
 		while (more_data(in)) {
 			// each row contains one self-suspending constraint
-			cstr.push_back(parse_precedence_constraint<Time>(in));
+			cstr.push_back(parse_precedence_constraint<Time>(in, jobs));
 			next_line(in);
 		}
 		return cstr;
 	}
 
 	template<class Time>
-	inline std::vector<Precedence_constraint<Time>> parse_yaml_dag_file(std::istream& in)
+	inline std::vector<Precedence_constraint<Time>> parse_yaml_dag_file(std::istream& in, typename NP::Job<Time>::Job_set jobs)
 	{
 		std::vector<Precedence_constraint<Time>> edges;
 		// Clear any flags
@@ -197,21 +212,129 @@ namespace NP {
 							auto tid = succ[0].as<unsigned long>();
 							auto jid = succ[1].as<unsigned long>();
 							auto to = JobID(jid, tid);
-							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}));
+							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs));
 						} else {
 							auto tid = succ["Task ID"].as<unsigned long>();
 							auto jid = succ["Job ID"].as<unsigned long>();
 							auto to = JobID(jid, tid);
-							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}));
+							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs));
 						}
 					}
 				}
 			}
 
 		} catch (const YAML::Exception& e) {
-			std::cerr << "Error reading YAML file: " << e.what() << std::endl;
+			std::cerr << "Error reading Exclusion Constraints YAML file: " << e.what() << std::endl;
 		}
 		return edges;
+	}
+
+	//Function that helps parse selfsuspending tasks file
+	template<class Time>
+	Exclusion_constraint<Time> parse_mutex_constraint(std::istream &in, typename NP::Job<Time>::Job_set& jobs)
+	{
+		unsigned long jobA_tid, jobA_jid, jobB_tid, jobB_jid;
+		Time delay_min=0, delay_max=0;
+		std::string excl_type;
+		Exclusion_type type = exec_exclusion;
+
+		std::ios_base::iostate state_before = in.exceptions();
+
+		in.exceptions(std::istream::failbit | std::istream::badbit);
+
+		in >> jobA_tid;
+		next_field(in);
+		in >> jobA_jid;
+		next_field(in);
+		in >> jobB_tid;
+		next_field(in);
+		in >> jobB_jid;
+		next_field(in);
+		if (more_fields_in_line(in))
+		{
+			in >> delay_min;
+			next_field(in);
+			in >> delay_max;
+			if (delay_max < delay_min)
+				throw std::invalid_argument("delay_min > delay_max for job T"+jobA_tid+'J'+jobA_jid);
+		}
+
+		next_field(in);
+		if (more_fields_in_line(in))
+		{
+			in >> excl_type;
+			std::transform(excl_type.begin(), excl_type.end(), excl_type.begin(), [](unsigned char c){ return std::tolower(c); });
+			if (excl_type == "s") type = start_exclusion;
+			else if (excl_type != "e") throw std::invalid_argument("Unexpected type: must be 's' or 'e'");
+		}
+
+		in.exceptions(state_before);
+
+		return Exclusion_constraint<Time>{JobID{jobA_jid, jobA_tid},
+											JobID{jobB_jid, jobB_tid},
+											Interval<Time>{delay_min, delay_max},
+											type, jobs};
+	}
+
+	template<class Time>
+	std::vector<Exclusion_constraint<Time>> parse_mutex_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
+	{
+		// skip column headers
+		next_line(in);
+		std::vector<Exclusion_constraint<Time>> cstr;
+
+		// parse all rows
+		while (more_data(in)) {
+			// each row contains one mutual exclusion constraint
+			cstr.push_back(parse_mutex_constraint<Time>(in, jobs));
+			next_line(in);
+		}
+		return cstr;
+	}
+
+	template<class Time>
+	inline std::vector<Exclusion_constraint<Time>> parse_yaml_mutex_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
+	{
+		std::vector<Exclusion_constraint<Time>> mutex_constraints;
+		// Clear any flags
+		in.clear();
+		// Move the pointer to the beginning
+		in.seekg(0, std::ios::beg);
+		try {
+			// read the YAML file
+			YAML::Node input_job_set = YAML::Load(in);
+			auto const js = input_job_set["jobset"];
+			// Iterate over each jobset entry
+			for (auto const &j : js) {
+				// Check if a job has a mutual exclusion
+				if (j["Mutual_exclusions"]) {
+					auto jobA = JobID(j["Job ID"].as<unsigned long>(), j["Task ID"].as<unsigned long>());
+					// Iterate over each mutual exclusion
+					for (const auto &excl: j["Mutual_exclusions"]) {
+						// first, we need to check to see if it is written
+						// in the compact form [TaskID, JobID]
+						// or the expanded form
+						// - Task ID: Int
+						// 	 Job ID: Int
+						if (excl.IsSequence()) {
+							auto tid = excl[0].as<unsigned long>();
+							auto jid = excl[1].as<unsigned long>();
+							auto jobB = JobID(jid, tid);
+							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs));
+						} else {
+							auto tid = excl["Task ID"].as<unsigned long>();
+							auto jid = excl["Job ID"].as<unsigned long>();
+							auto jobB = JobID(jid, tid);
+							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs));
+						}
+					}
+				}
+			}
+
+		} catch (const YAML::Exception& e) {
+			std::cerr << "Error reading Exclusion Constraints YAML file: " << e.what() << std::endl;
+		}
+		return mutex_constraints;
 	}
 
 	template<class Time> 
@@ -576,6 +699,7 @@ namespace NP {
      }
 
 	 Pruning_condition cond(jobset.size());
+     long long time_limit = 0;
 
      // Parse Focus::jobset and Focus::taskset
      std::set<std::pair<unsigned long, unsigned long>> focus_jobset;
@@ -587,15 +711,19 @@ namespace NP {
                  if (job.IsSequence() && job.size() == 2) {
                      focus_jobset.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
                  }
-					else {
-						std::cerr << "Error reading Focus::jobset. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
-					}
+				else {
+					std::cerr << "Error reading Focus::jobset. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+				}
              }
          }
          if (focus["taskset"]) {
              for (const auto& task : focus["taskset"]) {
                  focus_taskset.insert(task.as<unsigned long>());
              }
+         }
+         // Parse Focus::time
+         if (focus["time"]) {
+             time_limit = focus["time"].as<long long>();
          }
      }
 
@@ -614,9 +742,9 @@ namespace NP {
                  if (job.IsSequence() && job.size() == 2) {
                      prune_jobs.emplace(job[0].as<unsigned long>(), job[1].as<unsigned long>());
                  }
-					else {
-						std::cerr << "Error reading Prune::jobs. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
-					}
+				else {
+					std::cerr << "Error reading Prune::jobs. Expected a sequence of [TaskID, JobID]. This field is going to be ignored." << std::endl;
+				}
              }
          }
      }
@@ -686,6 +814,7 @@ namespace NP {
          }
      }
 
+     cond.time_limit = time_limit;
      return cond;
     }
 #endif

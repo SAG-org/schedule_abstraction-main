@@ -35,10 +35,10 @@ const std::string prec_dag_file =
 TEST_CASE("[prec] RTSS17-Fig1a") {
 	auto dag_in = std::istringstream(prec_dag_file);
 	auto in = std::istringstream(fig1a_jobs_file);
-
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(dag_in, jobs)};
 
 	Analysis_options opts;
 
@@ -54,9 +54,6 @@ TEST_CASE("[prec] RTSS17-Fig1a") {
 		CHECK(nspace->get_finish_times(j) == space->get_finish_times(j));
 		CHECK(nspace->get_finish_times(j).from() != 0);
 	}
-
-	delete space;
-	delete nspace;
 }
 
 const std::string prec_dag_file_with_cycle =
@@ -73,10 +70,10 @@ const std::string prec_dag_file_with_cycle =
 TEST_CASE("[prec] handle cycles gracefully") {
 	auto dag_in = std::istringstream(prec_dag_file_with_cycle);
 	auto in = std::istringstream(fig1a_jobs_file);
-
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(dag_in, jobs)};
 
 	Analysis_options opts;
 	//opts.early_exit = false;
@@ -88,9 +85,6 @@ TEST_CASE("[prec] handle cycles gracefully") {
 	opts.be_naive = false;
 	auto space = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK_FALSE(space->is_schedulable());
-
-	delete space;
-	delete nspace;
 }
 
 const std::string deadend_jobs_file =
@@ -116,10 +110,10 @@ const std::string deadend_dag_file =
 TEST_CASE("[prec] handle analysis deadend gracefully") {
 	auto dag_in = std::istringstream(deadend_dag_file);
 	auto in = std::istringstream(deadend_jobs_file);
-
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(dag_in, jobs)};
 
 	Analysis_options opts;
 	//opts.early_exit = false;
@@ -131,8 +125,5 @@ TEST_CASE("[prec] handle analysis deadend gracefully") {
 	opts.be_naive = false;
 	auto space = Global::State_space<dtime_t>::explore(prob, opts);
 	CHECK_FALSE(space->is_schedulable());
-
-	delete space;
-	delete nspace;
 }
 

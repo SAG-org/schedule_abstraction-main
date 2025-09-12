@@ -34,6 +34,9 @@ static std::string focus_file;
 static bool want_precedence = false;
 static std::string precedence_file;
 
+static bool want_mutexes = false;
+static std::string excl_file;
+
 static bool want_aborts = false;
 static std::string aborts_file;
 
@@ -77,10 +80,12 @@ template<class Time, class Space>
 static Analysis_result analyze(
 	std::istream& in,
 	std::istream& prec_in,
+	std::istream& excl_in,
 	std::istream& aborts_in,
 	std::istream& platform_in,
 	bool in_is_yaml,
 	bool dag_is_yaml,
+	bool excl_is_yaml,
 	bool aborts_is_yaml,
 	bool plat_is_yaml)
 {
@@ -88,7 +93,13 @@ static Analysis_result analyze(
 	typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
 
 	// Parse precedence constraints
-	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in) : NP::parse_precedence_file<Time>(prec_in);
+	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in, jobs) : NP::parse_precedence_file<Time>(prec_in, jobs);
+
+	// Parse exclusion (mutex) constraints
+	std::vector<NP::Exclusion_constraint<Time>> mutexes;
+	if (want_mutexes) {
+		mutexes = excl_is_yaml ? NP::parse_yaml_mutex_file<Time>(excl_in, jobs) : NP::parse_mutex_file<Time>(excl_in, jobs);
+	}
 
 	// Parse platform specification if provided
 	std::vector<Interval<Time>> platform_spec;
@@ -105,6 +116,7 @@ static Analysis_result analyze(
 		jobs,
 		edges,
 		NP::parse_abort_file<Time>(aborts_in),
+		mutexes,
 		platform_spec };
 
 	// Set common analysis options
@@ -211,28 +223,29 @@ static Analysis_result analyze(
 		width_stream.str(),
 		deadline_miss_stream.str()
 	};
-	delete space;
 	return results;
 }
 
 static Analysis_result process_stream(
 	std::istream &in,
 	std::istream &prec_in,
+	std::istream &excl_in,
 	std::istream &aborts_in,
 	std::istream &platform_in,
 	bool in_is_yaml = false, 
 	bool dag_is_yaml = false, 
+	bool excl_is_yaml = false,
 	bool aborts_is_yaml = false, 
 	bool plat_is_yaml = false)
 {
 	if (want_multiprocessor && want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, excl_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else if (want_multiprocessor && !want_dense)
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, excl_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else if (want_dense)
-		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
+		return analyze<dense_t, NP::Global::State_space<dense_t>>(in, prec_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, excl_is_yaml, aborts_is_yaml, plat_is_yaml);
 	else
-		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
+		return analyze<dtime_t, NP::Global::State_space<dtime_t>>(in, prec_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, excl_is_yaml, aborts_is_yaml, plat_is_yaml);
 }
 
 static void process_file(const std::string& fname)
@@ -243,11 +256,13 @@ static void process_file(const std::string& fname)
 		auto empty_dag_stream = std::istringstream("\n");
 		auto empty_aborts_stream = std::istringstream("\n");
 		auto empty_platform_stream = std::istringstream("\n");
+		auto empty_excl_stream = std::istringstream("\n");
 		auto dag_stream = std::ifstream();
+		auto excl_stream = std::ifstream();
 		auto aborts_stream = std::ifstream();
 		auto platform_stream = std::ifstream();
 
-		bool in_is_yaml = false, dag_is_yaml = false, aborts_is_yaml = false, plat_is_yaml = false;
+	bool in_is_yaml = false, dag_is_yaml = false, excl_is_yaml = false, aborts_is_yaml = false, plat_is_yaml = false;
 		
 		// check the extension of the job input file
 		if (fname != "-") {
@@ -283,6 +298,14 @@ static void process_file(const std::string& fname)
 			}
 		}
 
+		if (want_mutexes) {
+			excl_stream.open(excl_file);
+			std::string ext = excl_file.substr(excl_file.find_last_of(".") + 1);
+			if (ext == "yaml" || ext == "yml") {
+				excl_is_yaml = true;
+			}
+		}
+
 		if (platform_defined) {
 			platform_stream.open(platform_file);
 			//check the extension of the file
@@ -296,6 +319,10 @@ static void process_file(const std::string& fname)
 			static_cast<std::istream&>(dag_stream) :
 			static_cast<std::istream&>(empty_dag_stream);
 
+		std::istream &excl_in = want_mutexes ?
+			static_cast<std::istream&>(excl_stream) :
+			static_cast<std::istream&>(empty_excl_stream);
+
 		std::istream &aborts_in = want_aborts ?
 			static_cast<std::istream&>(aborts_stream) :
 			static_cast<std::istream&>(empty_aborts_stream);
@@ -306,11 +333,11 @@ static void process_file(const std::string& fname)
 
 		if (fname == "-")
 		{
-			result = process_stream(std::cin, dag_in, aborts_in, platform_in);
+			result = process_stream(std::cin, dag_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, false, aborts_is_yaml, plat_is_yaml);
 		}
 		else {
-            auto in = std::ifstream(fname, std::ios::in);
-			result = process_stream(in, dag_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, aborts_is_yaml, plat_is_yaml);
+	            auto in = std::ifstream(fname, std::ios::in);
+			result = process_stream(in, dag_in, excl_in, aborts_in, platform_in, in_is_yaml, dag_is_yaml, excl_is_yaml, aborts_is_yaml, plat_is_yaml);
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 			if (want_dot_graph) {
@@ -468,6 +495,10 @@ int main(int argc, char** argv)
 	      .help("name of the file that contains the job set's precedence DAG")
 	      .set_default("");
 
+	parser.add_option("--excl").dest("excl_file")
+	      .help("[experimental] name of the file that contains the job set's exclusion (mutex) constraints")
+	      .set_default("");
+
 	parser.add_option("-a", "--abort-actions").dest("abort_file")
 	      .help("name of the file that contains the job set's abort actions")
 	      .set_default("");
@@ -591,6 +622,16 @@ int main(int argc, char** argv)
 		          << std::endl;
 	}
 	aborts_file = (const std::string&) options.get("abort_file");
+
+	want_mutexes = options.is_set_by_user("excl_file");
+	if (want_mutexes && parser.args().size() > 1) {
+		std::cerr << "[!!] Warning: multiple job sets "
+		          << "with a single exclusion constraints file specified." 
+		          << std::endl;
+	}
+	else if (want_mutexes)
+		std::cout << "[**] Note: support for mutex constraints is only experimental for now." << std::endl;
+	excl_file = (const std::string&) options.get("excl_file");
 
 
 	platform_defined = options.is_set_by_user("platform_file");

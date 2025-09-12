@@ -39,9 +39,10 @@ TEST_CASE("[susp] Uniproc Supernode Self-Suspensions") {
 	auto dag_in  = std::istringstream("\n");
 	auto aborts_in = std::istringstream("\n");
 
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(susp_dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(susp_dag_in, jobs) };
 
 	Analysis_options opts;
 
@@ -66,10 +67,6 @@ TEST_CASE("[susp] Uniproc Supernode Self-Suspensions") {
 		CHECK(pw_nspace->get_finish_times(j) == pw_space->get_finish_times(j));
 		CHECK(pw_nspace->get_finish_times(j).upto() <= gen_space->get_finish_times(j).upto());
 	}
-	delete gen_nspace;
-	delete gen_space;
-	delete pw_nspace;
-	delete pw_space;
 }
 
 
@@ -196,9 +193,10 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (sn_susp)") {
 	auto susp_dag_in = std::istringstream(uniproc_sn_susp_dag_file);
 	auto in = std::istringstream(uniproc_sn_susp_jobs_file);
 
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(susp_dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(susp_dag_in, jobs) };
 
 	Analysis_options opts;
 
@@ -214,17 +212,16 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (sn_susp)") {
 	for (const Job<dtime_t>& j : prob.jobs) {
 		CHECK(uspace->get_finish_times(j) == gspace->get_finish_times(j)); 
 	}
-	delete uspace;
-	delete gspace;
 }
 
 TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	auto susp_dag_in = std::istringstream(uniproc_sn_susp_g_pw_diff_file);
 	auto in = std::istringstream(uniproc_sn_susp_jobs_g_pw_diff_file);
 
+	auto jobs = parse_csv_job_file<dtime_t>(in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(in),
-		parse_precedence_file<dtime_t>(susp_dag_in)};
+		jobs,
+		parse_precedence_file<dtime_t>(susp_dag_in, jobs) };
 
 	Analysis_options opts;
 
@@ -240,8 +237,6 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	for (const Job<dtime_t>& j : prob.jobs) {
 		CHECK(uspace->get_finish_times(j) == gspace->get_finish_times(j)); 
 	}
-	delete uspace;
-	delete gspace;
 }
 
 // test removed: the code does not differentiate between uniproc and global anymore
@@ -262,8 +257,6 @@ TEST_CASE("[susp] Uniproc Global Schedulability Check (g_pw_diff)") {
 	opts.be_naive = false;
 
 	auto gspace = NP::Global::State_space<dtime_t>::explore(prob, opts);
-	CHECK(!(gspace->is_schedulable())); 
-	delete uspace;
-	delete gspace;
+	CHECK(!(gspace->is_schedulable()));
 }*/
 

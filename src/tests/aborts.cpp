@@ -31,9 +31,10 @@ TEST_CASE("[uni] basic aborts") {
 	auto dag_in  = std::istringstream("\n");
 	auto aborts_in = std::istringstream(basic_aborts_file);
 
+	auto jobs = NP::parse_csv_job_file<dtime_t>(jobs_in);
 	Scheduling_problem<dtime_t> prob{
-		parse_csv_job_file<dtime_t>(jobs_in),
-		parse_precedence_file<dtime_t>(dag_in),
+		jobs,
+		parse_precedence_file<dtime_t>(dag_in, jobs),
 		parse_abort_file<dtime_t>(aborts_in),
 		1
 	};
@@ -54,8 +55,6 @@ TEST_CASE("[uni] basic aborts") {
 
 	CHECK(space->get_finish_times(prob.jobs[1]).min() == 37);
 	CHECK(space->get_finish_times(prob.jobs[1]).max() == 60);
-
-	delete space;
 };
 
 const std::string cascade_jobs_file =
@@ -91,14 +90,13 @@ TEST_CASE("[uni] abort stops DL miss cascade") {
 		CHECK(space->get_finish_times(prob.jobs[2]).max() == 25);
 		CHECK(space->get_finish_times(prob.jobs[3]).min() == 12);
 		CHECK(space->get_finish_times(prob.jobs[3]).max() == 13);
-
-		delete space;
 	}
 
 	SUBCASE("with aborts") {
+		auto jobs = NP::parse_csv_job_file<dtime_t>(jobs_in);
 		Scheduling_problem<dtime_t> prob{
-			parse_csv_job_file<dtime_t>(jobs_in),
-			parse_precedence_file<dtime_t>(dag_in),
+			jobs,
+			parse_precedence_file<dtime_t>(dag_in, jobs),
 			parse_abort_file<dtime_t>(aborts_in),
 			1
 		};
@@ -114,8 +112,6 @@ TEST_CASE("[uni] abort stops DL miss cascade") {
 		CHECK(space->get_finish_times(prob.jobs[2]).max() == 22);
 		CHECK(space->get_finish_times(prob.jobs[3]).min() == 12);
 		CHECK(space->get_finish_times(prob.jobs[3]).max() == 13);
-
-		delete space;
 	}
 
 };

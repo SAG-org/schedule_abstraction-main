@@ -5,16 +5,42 @@
 
 namespace NP {
 
+	enum Precedence_type {
+		start_to_start,
+		finish_to_start
+	};
+
 	template<class Time>
 	class Precedence_constraint {
 	public:
 		Precedence_constraint(JobID from,
 			JobID to,
-			Interval<Time> sus_times)
+			Interval<Time> delay,
+			const typename Job<Time>::Job_set& jobs)
 			: from(from)
 			, to(to)
-			, sus_times(sus_times)
+			, delay(delay)
+			, type(finish_to_start)
 		{
+			const Job<Time>& jobA = lookup<Time>(jobs, from);
+			const Job<Time>& jobB = lookup<Time>(jobs, to);
+			fromIndex = (Job_index)(&jobA - &(jobs[0]));
+			toIndex = (Job_index)(&jobB - &(jobs[0]));
+		}
+
+		Precedence_constraint(JobID from,
+			JobID to,
+			Interval<Time> delay,
+			Precedence_type type, const typename Job<Time>::Job_set& jobs)
+			: from(from)
+			, to(to)
+			, delay(delay)
+			, type(type)
+		{
+			const Job<Time>& jobA = lookup<Time>(jobs, from);
+			const Job<Time>& jobB = lookup<Time>(jobs, to);
+			fromIndex = (Job_index)(&jobA - &(jobs[0]));
+			toIndex = (Job_index)(&jobB - &(jobs[0]));
 		}
 
 		JobID get_fromID() const
@@ -27,24 +53,19 @@ namespace NP {
 			return to;
 		}
 
-		Time get_minsus() const
+		Time get_min_delay() const
 		{
-			return sus_times.from();
+			return delay.from();
 		}
 
-		Time get_maxsus() const
+		Time get_max_delay() const
 		{
-			return sus_times.until();
+			return delay.until();
 		}
 
-		Interval<Time> get_suspension() const
+		Interval<Time> get_delay() const
 		{
-			return sus_times;
-		}
-
-		void set_toIndex(Job_index index)
-		{
-			toIndex = index;
+			return delay;
 		}
 
 		Job_index get_toIndex() const
@@ -52,14 +73,14 @@ namespace NP {
 			return toIndex;
 		}
 
-		void set_fromIndex(Job_index index)
-		{
-			fromIndex = index;
-		}
-
 		Job_index get_fromIndex() const
 		{
 			return fromIndex;
+		}
+
+		Precedence_type get_type() const
+		{
+			return type;
 		}
 
 	private:
@@ -68,7 +89,8 @@ namespace NP {
 		// toIndex and fromIndex are set during validation
 		Job_index toIndex;
 		Job_index fromIndex;
-		Interval<Time> sus_times;
+		Interval<Time> delay;
+		Precedence_type type;
 	};
 
 	class InvalidPrecParameter : public std::exception
@@ -89,19 +111,15 @@ namespace NP {
 	};
 
 	template<class Time>
-	void validate_prec_cstrnts(std::vector<Precedence_constraint<Time>>& precs,
-		const typename Job<Time>::Job_set jobs)
+	void validate_prec_cstrnts(std::vector<Precedence_constraint<Time>>& precs)
 	{
-
 		for (Precedence_constraint<Time>& prec : precs) {
-			const Job<Time>& fromJob = lookup<Time>(jobs, prec.get_fromID());
-			const Job<Time>& toJob = lookup<Time>(jobs, prec.get_toID());
-			// set toIndex and fromIndex here.
-			// TODO: get rid of this. Dangerous that job index is changed after construction !
-			prec.set_toIndex((Job_index)(&toJob - &(jobs[0])));
-			prec.set_fromIndex((Job_index)(&fromJob - &(jobs[0])));
-			if (prec.get_maxsus() < prec.get_minsus()) {
+			if (prec.get_max_delay() < prec.get_min_delay()) {
 				throw InvalidPrecParameter(prec.get_fromID());
+			}
+
+			if (prec.get_fromIndex() == (Job_index)(-1) || prec.get_toIndex() == (Job_index)(-1)) {
+				throw std::invalid_argument("Invalid job indices in precedence constraints");
 			}
 		}
 	}

@@ -49,6 +49,7 @@ namespace NP {
 			typedef Scheduling_problem<Time> Problem;
 			typedef typename Scheduling_problem<Time>::Workload Workload;
 			typedef typename Scheduling_problem<Time>::Precedence_constraints Precedence_constraints;
+			typedef typename Scheduling_problem<Time>::Mutex_constraints Mutex_constraints;
 			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
 
@@ -58,7 +59,7 @@ namespace NP {
 			typedef std::shared_ptr<State> State_ref;
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Problem& prob,
 				const Analysis_options& opts,
 				const Log_options<Time>& log_opts)
@@ -66,12 +67,13 @@ namespace NP {
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
+				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
-				);
+				));
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -81,15 +83,16 @@ namespace NP {
 				return s;
 			}
 #endif
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Problem& prob,
 				const Analysis_options& opts)
 			{
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				State_space* s = new State_space(prob.jobs, prob.prec, prob.aborts, prob.processors_initial_state,
-					{ opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth }, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
+				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
@@ -97,7 +100,7 @@ namespace NP {
 					, opts.pruning_active
 					, opts.pruning_cond
 #endif
-				);
+				));
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
@@ -108,7 +111,7 @@ namespace NP {
 			}
 
 			// convenience interface for tests
-			static State_space* explore_naively(
+			static std::unique_ptr<State_space> explore_naively(
 				const Workload& jobs,
 				unsigned int num_cpus = 1)
 			{
@@ -119,7 +122,7 @@ namespace NP {
 			}
 
 			// convenience interface for tests
-			static State_space* explore(
+			static std::unique_ptr<State_space> explore(
 				const Workload& jobs,
 				unsigned int num_cpus = 1)
 			{
@@ -281,7 +284,7 @@ namespace NP {
 #endif
 
 			// updated only by main thread - no protection needed
-			unsigned long current_job_count, max_width;
+			unsigned long long current_job_count, max_width;
 			std::vector<std::pair<unsigned long, unsigned long>> width;
 
 			Processor_clock cpu_time;
@@ -296,6 +299,7 @@ namespace NP {
 			State_space(const Workload& jobs,
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
+				const Mutex_constraints& mutexes,
 				const std::vector<Interval<Time>>& cores_initial_state,
 				Merge_options merge_options,
 				double max_cpu_time = 0,
@@ -314,7 +318,7 @@ namespace NP {
 				, bool pruning_active = false
 				, const Pruning_condition& pruning_cond = Pruning_condition()
 #endif
-			)	: state_space_data(jobs, edges, aborts, num_cpus)
+			)	: state_space_data(jobs, edges, aborts, mutexes, num_cpus)
 				, aborted(false)
 				, timed_out(false)
 				, observed_deadline_miss(false)
@@ -641,7 +645,11 @@ namespace NP {
 								Node_ref next =
 									new_node(1, new_n, j, j.get_job_index(), state_space_data, 0, 0, 0);
 								//const CoreAvailability empty_cav = {};
-								State_ref next_s = new_state(*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(), new_n.get_jobs_with_pending_successors(), new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin);
+								State_ref next_s = new_state(
+										*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(),
+										new_n.get_jobs_with_pending_start_successors(), new_n.get_jobs_with_pending_finish_successors(),
+										new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin
+								);
 								next->add_state(next_s);
 								increment_states_safe();
 								deadline_miss_state = next_s;
@@ -667,19 +675,19 @@ namespace NP {
 			// find next time by which a job is certainly ready in system state 's'
 			Time next_certain_job_ready_time(const Node& n, const State& s) const
 			{
-				Time t_ws = std::min(s.next_certain_gang_source_job_disptach(), s.next_certain_successor_jobs_disptach());
+				Time t_ws = std::min(s.next_certain_gang_source_job_dispatch(), s.next_certain_successor_jobs_dispatch());
 				Time t_wos = n.get_next_certain_sequential_source_job_release();
 				return std::min(t_wos, t_ws);
 			}
 
-			// assumes j is ready
+			// assumes all predecessors of j have been dispatched
 			// NOTE: we don't use Interval<Time> here because the
 			//       Interval c'tor sorts its arguments.
-			std::pair<Time, Time> start_times(
-				const State& s, const Job<Time>& j, const Time t_wc, const Time t_high,
+			std::pair<Time, Time> start_times( const Node& n, const State& s, 
+				const Job<Time>& j, const Time t_wc, const Time t_high,
 				const Time t_avail, const unsigned int ncores = 1) const
 			{
-				auto rt = state_space_data.earliest_ready_time(s, j);
+				auto rt = state_space_data.earliest_ready_time(n, s, j);
 				auto at = s.core_availability(ncores).min();
 				Time est = std::max(rt, at);
 
@@ -773,7 +781,7 @@ namespace NP {
 							t_avail = s->core_availability(std::prev(it)->first).max();
 
 						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << std::endl);
-						auto _st = start_times(*s, j, t_wc, t_high, t_avail, p);
+						auto _st = start_times(*n, *s, j, t_wc, t_high, t_avail, p);
 						if (_st.first > t_wc || _st.first >= t_high || _st.first >= t_avail)
 							continue; // nope, not next job that can be dispatched in state s, try the next state.
 
@@ -820,7 +828,10 @@ namespace NP {
 						// next should always exist at this point, possibly without states in it
 						// create a new state resulting from scheduling j in state s on p cores and try to merge it with an existing state in node 'next'.							
 						new_or_merge_state(*next, *s, j.get_job_index(),
-							stimes, ftimes, next->get_scheduled_jobs(), next->get_jobs_with_pending_successors(), next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p);
+							stimes, ftimes, next->get_scheduled_jobs(),
+							next->get_jobs_with_pending_start_successors(), next->get_jobs_with_pending_finish_successors(),
+							next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p
+						);
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 						if(log)
@@ -958,7 +969,7 @@ namespace NP {
 
 			void explore()
 			{
-				int last_time = get_cpu_time();
+				long long last_time = get_cpu_time();
 				unsigned int target_depth;
 				
 				if (verbose) {
@@ -972,9 +983,9 @@ namespace NP {
 				while (current_job_count < state_space_data.num_jobs()) {
 					Nodes& exploration_front = nodes();
 #ifdef CONFIG_PARALLEL
-					unsigned long n = exploration_front.unsafe_size();
+					unsigned long long n = exploration_front.unsafe_size();
 #else
-					unsigned long n = exploration_front.size();
+					unsigned long long n = exploration_front.size();
 #endif
 					if (n == 0)
 					{
@@ -988,7 +999,7 @@ namespace NP {
 					width[current_job_count] = { n, current_states - last_num_states };
 					last_num_states = current_states;
 
-					int time = get_cpu_time();
+					long long time = get_cpu_time();
 					if (time > last_time + 4) {
 						// check memory usage
 						long mem = check_memory_abort();
