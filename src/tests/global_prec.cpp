@@ -643,9 +643,9 @@ TEST_CASE("[global-prec] taskset-17 check transitivity pessimism (1)") {
 // Thread 2 is continuously occupied by T99, so only thread 1 is interesting
 // Thread 1:
 // - first job is 68
-// - second job should be 72, but the analysis hallucinates that it can also be 64, which is fine
-// - third job should be 69, but hallucination is possible, which is fine
-// - fourth job must be 64, unless 64 was already dispatched/hallunicated
+// - second job should be 72,
+// - third job should be 69, 
+// - fourth job must be 64, 
 // - last job must be 44
 const std::string ts18_jobs =
 "Task ID, Job ID, Arrival min, Arrival max, Cost min, Cost max, Deadline, Priority \n"
@@ -696,7 +696,13 @@ TEST_CASE("[global-prec] taskset-18 check transitivity pessimism (2)") {
 	validate_prec_cstrnts(prob.prec);
 
 	space = NP::Global::State_space<dtime_t>::explore(prob, {});
-	CHECK(!space->is_schedulable());
+	CHECK(space->is_schedulable());
+	// check the expected ordering of jobs is respected
+	CHECK(space->get_finish_times(0).min() == 10);
+	CHECK(space->get_finish_times(1).min() == 20);
+	CHECK(space->get_finish_times(2).min() == 30);
+	CHECK(space->get_finish_times(3).min() == 40);
+	CHECK(space->get_finish_times(4).min() == 50);
 }
 
 // T99 should start at time 0 and occupy the second core the whole time
@@ -957,17 +963,16 @@ const std::string premo_edges1 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (1)") {
-	auto dag_in = std::istringstream(premo_edges1);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs1);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
-	delete space;
 }
 
 // This is an unschedulable variant of precedence monster because the priority of T1J1 is larger
@@ -982,17 +987,16 @@ const std::string premo_jobs2 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (2)") {
-	auto dag_in = std::istringstream(premo_edges1);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs2);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
-	delete space;
 }
 
 // This is an unschedulable variant of precedence monster because the latest arrival of T0J1 is 11 rather than 10
@@ -1007,17 +1011,16 @@ const std::string premo_jobs3 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (3)") {
-	auto dag_in = std::istringstream(premo_edges1);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs3);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
-	delete space;
 }
 
 // This is an unschedulable variant of precedence monster because T0J1 and T1J1 both need to wait
@@ -1031,11 +1034,11 @@ const std::string premo_edges4 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (4)") {
-	auto dag_in = std::istringstream(premo_edges4);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs1);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges4);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
@@ -1043,7 +1046,6 @@ TEST_CASE("[global-prec] precedence monster (4)") {
 	CHECK(!space->is_schedulable());
 	CHECK(space->get_finish_times(1).max() == 30);
 	CHECK(space->get_finish_times(3).max() == 45);
-	delete space;
 }
 
 // This is an unschedulable variant of precedence monster because T0J1 needs to wait on both T0J0 and T1J0
@@ -1055,11 +1057,11 @@ const std::string premo_edges5 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (5)") {
-	auto dag_in = std::istringstream(premo_edges5);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs1);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	
+	auto dag_in = std::istringstream(premo_edges5);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
@@ -1067,7 +1069,6 @@ TEST_CASE("[global-prec] precedence monster (5)") {
 	CHECK(!space->is_schedulable());
 	CHECK(space->get_finish_times(1).max() == 30);
 	CHECK(space->get_finish_times(3).max() == 45);
-	delete space;
 }
 
 // This is a longer variant of precedence monster that should still be schedulable, and a weaker variant of (7)
@@ -1096,17 +1097,16 @@ const std::string premo_edges6 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (6)") {
-	auto dag_in = std::istringstream(premo_edges6);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs6);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges6);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
-	delete space;
 }
 
 // This is a longer variant of precedence monster that should still be schedulable
@@ -1135,11 +1135,11 @@ const std::string premo_edges7 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (7)") {
-	auto dag_in = std::istringstream(premo_edges7);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs7);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges7);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
@@ -1147,7 +1147,6 @@ TEST_CASE("[global-prec] precedence monster (7)") {
 	// I believe this should be schedulable, but the SAG is currently not able to conclude this
 	//CHECK(space->is_schedulable());
 	// Variant (6) is a weaker variant of this test, which is deemed schedulable
-	delete space;
 }
 
 // This variant is unschedulable because there is suspension
@@ -1158,17 +1157,16 @@ const std::string premo_edges8 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (8)") {
-	auto dag_in = std::istringstream(premo_edges8);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs1);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges8);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
-	delete space;
 }
 
 // This is a schedulable variant with an extra core that is occupied by a long high-prio job
@@ -1184,18 +1182,17 @@ const std::string premo_jobs9 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (9)") {
-	auto dag_in = std::istringstream(premo_edges1);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs9);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 3 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	// I think this should be schedulable, but the SAG currently does not conclude this
 	//CHECK(space->is_schedulable());
-	delete space;
 }
 
 // This is a schedulable variant where T1J0 is split into two jobs and T1J2 has a redundant precedence constraint
@@ -1219,11 +1216,11 @@ const std::string premo_edges10 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (10)") {
-	auto dag_in = std::istringstream(premo_edges10);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs10);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+	
+	auto dag_in = std::istringstream(premo_edges10);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
@@ -1235,7 +1232,6 @@ TEST_CASE("[global-prec] precedence monster (10)") {
 	CHECK(space->get_finish_times(5).max() == 130);
 	CHECK(space->get_finish_times(6).max() == 130);
 	CHECK(space->is_schedulable());
-	delete space;
 }
 
 // This is an unschedulable variant because T3J0 has a priority of 0 instead of 3
@@ -1250,18 +1246,17 @@ const std::string premo_jobs11 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (11)") {
-	auto dag_in = std::istringstream(premo_edges1);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs11);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges1);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(!space->is_schedulable());
 	CHECK(space->get_finish_times(3).max() > 100);
-	delete space;
 }
 
 // This is a schedulable variant where some other unrelated jobs are certainly finished
@@ -1290,15 +1285,14 @@ const std::string premo_edges12 =
 ;
 
 TEST_CASE("[global-prec] precedence monster (12)") {
-	auto dag_in = std::istringstream(premo_edges12);
-	auto prec = NP::parse_precedence_file<dtime_t>(dag_in);
-
 	auto in = std::istringstream(premo_jobs12);
 	auto jobs = NP::parse_csv_job_file<dtime_t>(in);
+
+	auto dag_in = std::istringstream(premo_edges12);
+	auto prec = NP::parse_precedence_file<dtime_t>(dag_in, jobs);
 
 	NP::Scheduling_problem<dtime_t> prob{ jobs, prec, 2 };
 
 	auto space = NP::Global::State_space<dtime_t>::explore(prob, {});
 	CHECK(space->is_schedulable());
-	delete space;
 }

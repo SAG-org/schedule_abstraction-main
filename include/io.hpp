@@ -224,7 +224,7 @@ namespace NP {
 			}
 
 		} catch (const YAML::Exception& e) {
-			std::cerr << "Error reading Exclusion Constraints YAML file: " << e.what() << std::endl;
+			std::cerr << "Error reading Precedence Constraints YAML file: " << e.what() << std::endl;
 		}
 		return edges;
 	}

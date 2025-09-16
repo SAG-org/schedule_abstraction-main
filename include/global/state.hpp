@@ -99,13 +99,7 @@ namespace NP {
 			// the job with a priority at least equal to that of the first job disptached after the current state
 			Job_ref min_next_prio_job; 
 
-			// the job with a priority at least equal to that of the first job disptached after the current state
-			Job_ref min_next_prio_job; 
-
 		public:
-			typedef typename NP::Job<Time>* Job_ref;
-			
-
 			// initial state -- nothing yet has finished, nothing is running
 			Schedule_state(const unsigned int num_processors, const State_space_data<Time>& state_space_data)
 				: core_avail{ num_processors, Interval<Time>(Time(0), Time(0)) }
@@ -276,7 +270,7 @@ namespace NP {
 				// NOTE: must be done after the core availabilities have been updated
 				update_earliest_certain_gang_source_job_dispatch(next_source_job_rel, scheduled_jobs, state_space_data);
 
-				update_ready_successor_jobs_prio(state_space_data.successors_suspensions, state_space_data.predecessors_suspensions, ready_succ_jobs, scheduled_jobs);
+				update_ready_successor_jobs_prio(state_space_data.inter_job_constraints, ready_succ_jobs, scheduled_jobs);
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				extensions.reset(*this, from, j, start_times, finish_times,
@@ -318,7 +312,7 @@ namespace NP {
 				int offset = jft_find(j);
 				if (offset < job_finish_times.size() && job_finish_times[offset].job_idx == j)
 				{
-					ftimes = job_finish_times[offset].finish_time;
+					ftimes = job_finish_times[offset].time_interval;
 					return true;
 				}
 				else {
@@ -332,17 +326,12 @@ namespace NP {
 				return min_next_prio_job;
 			}
 
-			Job_ref get_next_dispatched_job_min_priority() const
-			{
-				return min_next_prio_job;
-			}
-
 			bool get_start_times(Job_index j, Interval<Time>& stimes) const
 			{
 				int offset = jst_find(j);
-				if (offset < job_start_times.size() && job_start_times[offset].first == j)
+				if (offset < job_start_times.size() && job_start_times[offset].job_idx == j)
 				{
-					stimes = job_start_times[offset].second;
+					stimes = job_start_times[offset].time_interval;
 					return true;
 				}
 				else {
@@ -821,7 +810,7 @@ namespace NP {
 
 					// check if one of the successors of j is in the list of certainly running jobs
 					for (const auto& s : delay_constraints[j->get_job_index()].finish_to_successors_start) {
-						if (scheduled_jobs.contains(s.first->get_job_index())) {
+						if (scheduled_jobs.contains(s.reference_job->get_job_index())) {
 							return true;
 						}
 					}
@@ -833,15 +822,15 @@ namespace NP {
 			// returns true if j is certainly started at least delay time units before the first core becomes available
 			bool certainly_started(Job_ref j, Time delay) const
 			{
-				// if there is only one core, then the job is certainly started if it was dispatched already
-				if (core_avail.size() == 1 && delay == 0)
+				// if the job is certainly dispatched, then it is certainly started too
+				if (delay == 0)
 					return true;
-				// check if the job either started in the past or is certainly running on the first core that will become available
+				// check if the job certainly started delay time units before the first core becomes available
 				Interval<Time> st{ 0, 0 };
 				bool has_st = get_start_times(j->get_job_index(), st);
 				assert(has_st);
 
-				// check if j certainly started dealy time units before the first core may become available
+				// check if j certainly started delay time units before the first core may become available
 				if (st.max() + delay <= core_availability(1).min())
 					return true;
 
@@ -867,7 +856,7 @@ namespace NP {
 				// check if all the predecessors of j are certainly finished when the first core becomes available (accounting for the suspension time)
 				const auto& f_predecessors = delay_constraints[j->get_job_index()].predecessors_finish_to_start;
 				for (const auto& p : f_predecessors) {
-					if (!certainly_finished(p.reference_job, p.delay.max(), constraints, scheduled_jobs)) 
+					if (!certainly_finished(p.reference_job, p.delay.max(), delay_constraints, scheduled_jobs)) 
 						return false;
 				}
 				// check if all the exclusion constraints of j are certainly fulfilled when the first core becomes available
@@ -878,7 +867,7 @@ namespace NP {
 				}
 				const auto& between_executions = delay_constraints[j->get_job_index()].between_executions;
 				for (const auto& p : between_executions) {
-					if (scheduled_jobs.contains(p.reference_job->get_job_index()) && !certainly_finished(p.reference_job, p.delay.max(), constraints, scheduled_jobs))
+					if (scheduled_jobs.contains(p.reference_job->get_job_index()) && !certainly_finished(p.reference_job, p.delay.max(), delay_constraints, scheduled_jobs))
 						return false;
 				}
 				return true;
@@ -1006,10 +995,10 @@ namespace NP {
 
 						if (!overlap && !suspending && arrives_before_finish) {
 							c--;
-							// record the predecessors of j
+							// record the predecessors of j if they have more than one successor
 							for (const auto& p : pred_j) {
-								auto jp = p.first;
-								if (successors_of[jp->get_job_index()].size() > 1)
+								auto jp = p.reference_job;
+								if (constraints[jp->get_job_index()].start_to_successors_start.size() + constraints[jp->get_job_index()].finish_to_successors_start.size() > 1)
 									predecessors.push_back(jp);
 							}
 							// if we already have num_cpus job that will certainly be ready when a core becomes free, 
@@ -1028,7 +1017,7 @@ namespace NP {
 			}
 
 			// Check whether the job_start_times or job_finish_times overlap.
-			bool check_intervals_overlap (const Job_times& this_times, const Job_times& other_times,
+			bool check_intervals_overlap (const Job_intervals& this_times, const Job_intervals& other_times,
 					bool conservative = false, const bool other_in_this = false) const 
 			{
 				bool all_jobs_intersect = true;
@@ -1042,19 +1031,19 @@ namespace NP {
 					if (other_it->job_idx == state_it->job_idx)
 					{
 						if (conservative) {
-							if (other_in_this == false && !other_it->finish_time.contains(state_it->finish_time))
+							if (other_in_this == false && !other_it->time_interval.contains(state_it->time_interval))
 							{
 								all_jobs_intersect = false; // not all the time this_intervals of this are within those of other
 								break;
 							}
-							else if (other_in_this == true && !state_it->finish_time.contains(other_it->finish_time))
+							else if (other_in_this == true && !state_it->time_interval.contains(other_it->time_interval))
 							{
 								all_jobs_intersect = false; // not all the time this_intervals of other are within those of this
 								break;
 							}
 						}
 						else {
-							if (!other_it->finish_time.intersects(state_it->finish_time))
+							if (!other_it->time_interval.intersects(state_it->time_interval))
 							{
 								all_jobs_intersect = false;
 								break;
@@ -1073,7 +1062,7 @@ namespace NP {
 				return all_jobs_intersect;
 			}
 
-			void widen_intervals(Job_times& this_intervals, const Job_times& other_intervals)
+			void widen_intervals(Job_intervals& this_intervals, const Job_intervals& other_intervals)
 			{
 				// The Job_times vectors are sorted.
 				// Assume check_overlap() is true.
@@ -1084,7 +1073,7 @@ namespace NP {
 				{
 					if (from_it->job_idx == state_it->job_idx)
 					{
-						state_it->finish_time.widen(from_it->finish_time);
+						state_it->time_interval.widen(from_it->time_interval);
 						from_it++;
 						state_it++;
 					}
@@ -1119,26 +1108,9 @@ namespace NP {
 				int end = job_start_times.size();
 				while (start < end) {
 					int mid = (start + end) / 2;
-					if (job_start_times[mid].first == j)
+					if (job_start_times[mid].job_idx == j)
 						return mid;
-					else if (job_start_times[mid].first < j)
-						start = mid + 1;  // mid is too small, mid+1 might fit.
-					else
-						end = mid;
-				}
-				return start;
-			}
-
-			// Find the offset in the Job_start_times vector where the index j should be located.
-			int jst_find(const Job_index j) const
-			{
-				int start = 0;
-				int end = job_start_times.size();
-				while (start < end) {
-					int mid = (start + end) / 2;
-					if (job_start_times[mid].first == j)
-						return mid;
-					else if (job_start_times[mid].first < j)
+					else if (job_start_times[mid].job_idx < j)
 						start = mid + 1;  // mid is too small, mid+1 might fit.
 					else
 						end = mid;
@@ -1428,11 +1400,6 @@ namespace NP {
 				return scheduled_jobs.contains(j);
 			}
 
-			bool is_ready(const Job<Time>& j) const
-			{
-				return scheduled_jobs.contains(j.get_job_index());
-			}
-
 			bool is_ready(const Job_index j, const Inter_job_constraints& constraints) const
 			{
 				for (const auto& pred : constraints.predecessors_start_to_start)
@@ -1648,26 +1615,68 @@ namespace NP {
 				ready_successor_jobs.reserve(from.ready_successor_jobs.size() + constraints[j].start_to_successors_start.size() +
 						constraints[j].finish_to_successors_start.size());
 
-				// add all jobs that were ready and were not the last job dispatched
-				for (const Job<Time>* rj : from.ready_successor_jobs)
-				{
-					if (rj->get_job_index() != j)
-						ready_successor_jobs.push_back(rj);
-				}
+				// update the list of ready successor jobs by keeping it sorted in non-increasing priority order
+				auto it_old = from.ready_successor_jobs.begin();
+				auto it_old_end = from.ready_successor_jobs.end();
+				while (it_old != it_old_end && (*it_old)->get_job_index() == j)
+					++it_old; // skip if it is the job we just dispatched
 
-				for (const auto& succ : constraints[j].start_to_successors_start)
-				{
-					auto succ_index = succ.reference_job->get_job_index();
-					if (is_ready(succ_index, constraints[succ_index]))
-						ready_successor_jobs.push_back(succ.reference_job);
-				}
+				auto it_start_succ = constraints[j].start_to_successors_start.begin();
+				auto it_start_succ_end = constraints[j].start_to_successors_start.end();
 
-				for (const auto& succ : constraints[j].finish_to_successors_start)
+				auto it_finish_succ = constraints[j].finish_to_successors_start.begin();
+				auto it_finish_succ_end = constraints[j].finish_to_successors_start.end();
+
+				auto get_next_ready_job = [&](auto& it, const auto it_end) {
+					while (it != it_end)
+					{
+						if (is_ready(it->reference_job->get_job_index(), constraints[it->reference_job->get_job_index()]))
+							break;
+						++it;
+					}
+				};
+
+				get_next_ready_job(it_start_succ, it_start_succ_end);
+				get_next_ready_job(it_finish_succ, it_finish_succ_end);
+
+				// merge the three sorted lists of ready jobs
+				while (it_old != it_old_end || it_start_succ != it_start_succ_end || it_finish_succ != it_finish_succ_end)
 				{
-					auto succ_index = succ.reference_job->get_job_index();
-					if (is_ready(succ_index, constraints[succ_index]))
-						ready_successor_jobs.push_back(succ.reference_job);
-				}
+					const Job<Time>* next_job = nullptr;
+					unsigned int next_source = 0; // 0 = old, 1 = start_succ, 2 = finish_succ
+					if (it_old != it_old_end) {
+						next_job = *it_old;
+					}
+					if (it_start_succ != it_start_succ_end) {
+						if (next_job == nullptr || it_start_succ->reference_job->higher_priority_than(*next_job)) {
+							next_source = 1;
+							next_job = it_start_succ->reference_job;
+						}
+					}
+					if (it_finish_succ != it_finish_succ_end) {
+						if (next_job == nullptr || it_finish_succ->reference_job->higher_priority_than(*next_job)) {
+							next_source = 2;
+							next_job = it_finish_succ->reference_job;
+						}
+					}
+
+					ready_successor_jobs.push_back(next_job);
+					switch (next_source)
+					{
+						case 0: // old
+							++it_old;
+							while (it_old != it_old_end && (*it_old)->get_job_index() == j)
+								++it_old; // skip if it is the job we just dispatched
+							break;
+						case 1: // start_succ
+							++it_start_succ;
+							get_next_ready_job(it_start_succ, it_start_succ_end);
+							break;
+						case 2: // finish_succ
+							++it_finish_succ;
+							get_next_ready_job(it_finish_succ, it_finish_succ_end);
+					}
+				}				
 			}
 
 			// update the list of jobs with non-dispatched successors 

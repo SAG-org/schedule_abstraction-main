@@ -155,17 +155,45 @@ namespace NP {
 					}
 				}
 
-				// sort the predecessors and successors suspensions lists by non-increasing priority order
-				for (auto& pred : _predecessors_suspensions) {
-					std::sort(pred.begin(), pred.end(),
-						[](const std::pair<Job_ref, Interval<Time>>& a, const std::pair<Job_ref, Interval<Time>>& b) {
-							return a.first->higher_priority_than(*(b.first));
-						});
+				for (const auto& m : mutexes) {
+					// NOTE: we exclude jobs with delay_max == 0 because the start constraint does not constrain anything then
+					if (m.get_type() == start_exclusion and m.get_max_delay() > 0) {
+						_inter_job_constraints[m.get_jobA_index()].between_starts.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
+						_inter_job_constraints[m.get_jobB_index()].between_starts.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
+					}
+					if (m.get_type() == exec_exclusion) {
+						_inter_job_constraints[m.get_jobA_index()].between_executions.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
+						_inter_job_constraints[m.get_jobB_index()].between_executions.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
+						_must_be_finished_jobs[m.get_jobA_index()].push_back(m.get_jobB_index());
+						_must_be_finished_jobs[m.get_jobB_index()].push_back(m.get_jobA_index());
+					}
 				}
-				for (auto& succ : _successors_suspensions) {
-					std::sort(succ.begin(), succ.end(),
-						[](const std::pair<Job_ref, Interval<Time>>& a, const std::pair<Job_ref, Interval<Time>>& b) {
-							return a.first->higher_priority_than(*(b.first));
+
+				// sort the predecessors and successors suspensions lists by non-increasing priority order
+				for (auto& c : _inter_job_constraints) {					
+					std::sort(c.predecessors_finish_to_start.begin(), c.predecessors_finish_to_start.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
+						});
+					std::sort(c.finish_to_successors_start.begin(), c.finish_to_successors_start.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
+						});
+					std::sort(c.predecessors_start_to_start.begin(), c.predecessors_start_to_start.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
+						});
+					std::sort(c.start_to_successors_start.begin(), c.start_to_successors_start.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
+						});
+					std::sort(c.between_starts.begin(), c.between_starts.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
+						});
+					std::sort(c.between_executions.begin(), c.between_executions.end(),
+						[](const Job_delay& a, const Job_delay& b) {
+							return a.reference_job->higher_priority_than(*(b.reference_job));
 						});
 				}
 
@@ -188,20 +216,6 @@ namespace NP {
 				for (const Abort_action<Time>& a : aborts) {
 					const Job<Time>& j = lookup<Time>(jobs, a.get_id());
 					abort_actions[j.get_job_index()] = &a;
-				}
-
-				for (const auto& m : mutexes) {
-					// NOTE: we exclude jobs with delay_max == 0 because the start constraint does not constrain anything then
-					if (m.get_type() == start_exclusion and m.get_max_delay() > 0) {
-						_inter_job_constraints[m.get_jobA_index()].between_starts.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
-						_inter_job_constraints[m.get_jobB_index()].between_starts.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
-					}
-					if (m.get_type() == exec_exclusion) {
-						_inter_job_constraints[m.get_jobA_index()].between_executions.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
-						_inter_job_constraints[m.get_jobB_index()].between_executions.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
-						_must_be_finished_jobs[m.get_jobA_index()].push_back(m.get_jobB_index());
-						_must_be_finished_jobs[m.get_jobB_index()].push_back(m.get_jobA_index());
-					}
 				}
 			}
 
