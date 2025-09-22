@@ -32,6 +32,8 @@ namespace NP {
 		Abort_actions aborts;
 		// (4) mutex constraints for (some of) the jobs
 		Mutex_constraints mutexes;
+		// hyper-period with which the workload repeats (0 if not periodic)
+		Time hyper_period;
 
 		// ** Platform model:
 		// initial state (availability intervals) of the identical processors 
@@ -61,20 +63,35 @@ namespace NP {
 		// constructors
 		// (1) jobs + prec + num_processors
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
-					   unsigned int num_processors = 1)
+					   const unsigned int num_processors = 1)
 		: jobs(jobs)
 		, prec(prec)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
+		, hyper_period(Time(0))
+		{
+			post_init_checks();
+		}
+
+		// (1b) jobs + prec + num_processors
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const unsigned int num_processors,
+			const Time hyper_period)
+			: jobs(jobs)
+			, prec(prec)
+			, processors_initial_state(num_processors, Interval<Time>(0, 0))
+			, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
 
 		// (2) jobs + prec + proc_init_state
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
-				   const std::vector<Interval<Time>>& proc_init_state)
+				   const std::vector<Interval<Time>>& proc_init_state,
+				   const Time hyper_period = Time(0))
 		: jobs(jobs)
 		, prec(prec)
 		, processors_initial_state(proc_init_state)
+		, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -82,11 +99,26 @@ namespace NP {
 		// (3) jobs + prec + aborts + num_processors
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Abort_actions& aborts,
-				   unsigned int num_processors = 1)
+				   const unsigned int num_processors = 1)
 		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
+		, hyper_period(Time(0))
+		{
+			post_init_checks();
+		}
+
+		// (3b) jobs + prec + aborts + num_processors
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const Abort_actions& aborts,
+			const unsigned int num_processors,
+			const Time hyper_period)
+			: jobs(jobs)
+			, prec(prec)
+			, aborts(aborts)
+			, processors_initial_state(num_processors, Interval<Time>(0, 0))
+			, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -94,11 +126,13 @@ namespace NP {
 		// (4) jobs + prec + aborts + proc_init_state
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Abort_actions& aborts,
-				   const std::vector<Interval<Time>>& proc_init_state)
+				   const std::vector<Interval<Time>>& proc_init_state,
+				   const Time hyper_period = Time(0))
 		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
 		, processors_initial_state(proc_init_state)
+		, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -108,15 +142,29 @@ namespace NP {
 				   unsigned int num_processors = 1)
 		: jobs(jobs)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
+		, hyper_period(Time(0))
+		{
+			post_init_checks();
+		}
+
+		// (5b) convenience: jobs + num_processors
+		Scheduling_problem(const Workload& jobs,
+			const unsigned int num_processors,
+			const Time hyper_period)
+			: jobs(jobs)
+			, processors_initial_state(num_processors, Interval<Time>(0, 0))
+			, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
 
 		// (6) convenience: jobs + proc_init_state
 		Scheduling_problem(const Workload& jobs,
-				   const std::vector<Interval<Time>>& proc_init_state)
+				   const std::vector<Interval<Time>>& proc_init_state,
+				   const Time hyper_period = Time(0))
 		: jobs(jobs)
 		, processors_initial_state(proc_init_state)
+		, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -124,11 +172,26 @@ namespace NP {
 		// (7) jobs + prec + mutexes
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Mutex_constraints& mutexes,
-				   unsigned int num_processors = 1)
+				   const unsigned int num_processors = 1)
 		: jobs(jobs)
 		, prec(prec)
 		, mutexes(mutexes)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
+		, hyper_period(Time(0))
+		{
+			post_init_checks();
+		}
+
+		// (7b) jobs + prec + mutexes
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const Mutex_constraints& mutexes,
+			const unsigned int num_processors,
+			const Time hyper_period)
+			: jobs(jobs)
+			, prec(prec)
+			, mutexes(mutexes)
+			, processors_initial_state(num_processors, Interval<Time>(0, 0))
+			, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -136,11 +199,13 @@ namespace NP {
 		// (8) jobs + prec + mutexes + proc_init_states
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Mutex_constraints& mutexes,
-				   const std::vector<Interval<Time>>& proc_init_state)
+				   const std::vector<Interval<Time>>& proc_init_state,
+				   const Time hyper_period = Time(0))
 		: jobs(jobs)
 		, prec(prec)
 		, mutexes(mutexes)
 		, processors_initial_state(proc_init_state)
+		, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -149,12 +214,29 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Abort_actions& aborts,
 				   const Mutex_constraints& mutexes,
-				   unsigned int num_processors = 1)
+				   const unsigned int num_processors = 1)
 		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
 		, mutexes(mutexes)
 		, processors_initial_state(num_processors, Interval<Time>(0, 0))
+		, hyper_period(Time(0))
+		{
+			post_init_checks();
+		}
+
+		// (9b) jobs + prec + abort + mutexes
+		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
+			const Abort_actions& aborts,
+			const Mutex_constraints& mutexes,
+			const unsigned int num_processors,
+			const Time hyper_period)
+			: jobs(jobs)
+			, prec(prec)
+			, aborts(aborts)
+			, mutexes(mutexes)
+			, processors_initial_state(num_processors, Interval<Time>(0, 0))
+			, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}
@@ -163,12 +245,14 @@ namespace NP {
 		Scheduling_problem(const Workload& jobs, const Precedence_constraints& prec,
 				   const Abort_actions& aborts,
 				   const Mutex_constraints& mutexes,
-				   const std::vector<Interval<Time>>& proc_init_state)
+				   const std::vector<Interval<Time>>& proc_init_state,
+				   const Time hyper_period = Time(0))
 		: jobs(jobs)
 		, prec(prec)
 		, aborts(aborts)
 		, mutexes(mutexes)
 		, processors_initial_state(proc_init_state)
+		, hyper_period(hyper_period)
 		{
 			post_init_checks();
 		}

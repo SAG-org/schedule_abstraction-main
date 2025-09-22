@@ -46,6 +46,9 @@ static unsigned int num_processors = 1;
 static bool platform_defined = false;
 static std::string platform_file;
 
+static bool want_auto_analysis_end_check = false;
+static unsigned int hyper_period = 0;
+
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 static bool want_dot_graph;
 static std::string dot_file;
@@ -117,7 +120,9 @@ static Analysis_result analyze(
 		edges,
 		NP::parse_abort_file<Time>(aborts_in),
 		mutexes,
-		platform_spec };
+		platform_spec,
+		(Time) hyper_period
+	};
 
 	// Set common analysis options
 	NP::Analysis_options opts;
@@ -511,6 +516,10 @@ int main(int argc, char** argv)
 	      .help("name of the file that contains the platform specification (CSV or YAML)")
 	      .set_default("");
 
+	parser.add_option("--auto-end").dest("hyper_period")
+	      .help("enable automatic check of when all possible states reachable by the system have been analyzed. Send the hyper-period of the workload as parameter. NOTE: incompatible with merge level set to 'no'.")
+	      .set_default("0");
+
 	parser.add_option("--header").dest("print_header")
 	      .help("print a column header")
 	      .action("store_const").set_const("1")
@@ -654,6 +663,17 @@ int main(int argc, char** argv)
 			std::cerr << "Error: invalid number of processors\n" << std::endl;
 			return 1;
 		}
+	}
+
+	want_auto_analysis_end_check = options.is_set_by_user("auto_end");
+	hyper_period = options.get("hyper_period");
+	if (want_auto_analysis_end_check && hyper_period < 1) {
+		std::cerr << "Error: invalid hyper-period argument for automatic analysis end check\n" << std::endl;
+		return 1;
+	}
+	if (want_auto_analysis_end_check && merge_opts == "no") {
+		std::cerr << "Error: automatic analysis end check is incompatible with merge level 'no'\n" << std::endl;
+		return 1;
 	}
 
 	want_rta_file = options.get("rta");
