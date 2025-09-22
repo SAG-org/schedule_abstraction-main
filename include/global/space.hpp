@@ -754,6 +754,12 @@ namespace NP {
 
 				for (const State_ref& s : *n_states)
 				{
+					// if the job priority is lower than than the minimum priority of the next dispatched job, it will not be dispatched next
+					// (remember that lower number means higher priority)
+					Job_ref next_dispatch_min_prio = s->get_next_dispatched_job_min_priority();
+					if (next_dispatch_min_prio != NULL && next_dispatch_min_prio->higher_priority_than(j))
+						continue;
+
 					const auto& costs = j.get_all_costs();
 					// check for all possible parallelism levels of the moldable gang job j (if j is not gang or not moldable than min_paralellism = max_parallelism and costs only constains a single element).
 					//for (unsigned int p = j.get_max_parallelism(); p >= j.get_min_parallelism(); p--)
@@ -882,7 +888,7 @@ namespace NP {
 					<< "upbnd_t_wc: " << upbnd_t_wc << std::endl);
 
 				//check all jobs that may be eligible to be dispatched next
-				// part 1: check source jobs (i.e., jobs without prcedence constraints) that are potentially eligible
+				// part 1: check source jobs (i.e., jobs without precedence constraints) that are potentially eligible
 				for (auto it = state_space_data.jobs_by_earliest_arrival.lower_bound(t_min);
 					it != state_space_data.jobs_by_earliest_arrival.end();
 					it++)
@@ -918,7 +924,8 @@ namespace NP {
 				{
 					const Job<Time>& j = **it;
 					DM(j << " (" << j.get_job_index() << ")" << std::endl);
-					// stop looking once we've left the window of interest
+
+					// don't look outside the window of interest
 					if (j.earliest_arrival() > upbnd_t_wc)
 						continue;
 
