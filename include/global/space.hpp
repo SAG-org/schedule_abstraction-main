@@ -1103,6 +1103,7 @@ namespace NP {
 							if (state_space_data.is_analysis_finished(node) == false) {
 								state_space_data.init_new_obs_window(node);
 								num_jobs += state_space_data.num_jobs();
+								width.resize(num_jobs, { 0,0 });
 							}
 						}
 						// if we reached a checkpoint (point in the analysis where all execution scenarios lead to a single node),

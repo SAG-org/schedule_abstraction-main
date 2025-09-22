@@ -194,11 +194,9 @@ static Analysis_result analyze(
 	if (want_width_file) {
 		width_stream << "Depth, Width (#Nodes), Width (#States)" << std::endl;
 		const std::vector<std::pair<unsigned long, unsigned long>>& width = space->evolution_exploration_front_width();
-		for (int d = 0; d < problem.jobs.size(); d++) {
-			width_stream << d << ", "
-					   << width[d].first
-					   << ", "
-					   << width[d].second
+		for (const auto& w : width) {
+			width_stream << w.first << ", "
+					   << w.second
 					   << std::endl;
 		}
 	}
