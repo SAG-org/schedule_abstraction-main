@@ -1092,17 +1092,29 @@ namespace NP {
 					if (!be_naive) {
 						// all jobs have been dispatched, check if we can stop or we should analyze one more hyper-period
 						if (current_job_count == num_jobs) {
-							assert(nodes().size() == 1);
 							// if the analysis is not finalized yet, we analyze one more observation window
-							if (state_space_data.is_analysis_finished(*(nodes().front())) == false) {
-								state_space_data.init_new_obs_window(*(nodes().front()));
+#ifdef CONFIG_PARALLEL
+							assert(nodes().unsafe_size() == 1);
+							auto& node = **(nodes().unsafe_begin());
+#else
+							assert(nodes().size() == 1);
+							auto& node = *(nodes().front());
+#endif
+							if (state_space_data.is_analysis_finished(node) == false) {
+								state_space_data.init_new_obs_window(node);
 								num_jobs += state_space_data.num_jobs();
 							}
 						}
 						// if we reached a checkpoint (point in the analysis where all execution scenarios lead to a single node),
 						// check if we can stop the analysis
+#ifdef CONFIG_PARALLEL
+						else if (n > 1 && nodes().unsafe_size() == 1) {
+							auto& node = **(nodes().unsafe_begin());
+#else
 						else if (n > 1 && nodes().size() == 1) {
-							if (state_space_data.is_analysis_finished(*(nodes().front())))
+							auto& node = *(nodes().front());
+#endif
+							if (state_space_data.is_analysis_finished(node))
 								break; // we already saw all current states in a previous hyper-period => analysis is finished
 						}
 					}
