@@ -68,7 +68,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
-				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.hyper_period, prob.processors_initial_state,
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -91,7 +91,7 @@ namespace NP {
 					std::cout << "Starting" << std::endl;
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
-				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.hyper_period, prob.processors_initial_state,
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -300,6 +300,7 @@ namespace NP {
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
 				const Mutex_constraints& mutexes,
+				const Time hyper_period,
 				const std::vector<Interval<Time>>& cores_initial_state,
 				Merge_options merge_options,
 				double max_cpu_time = 0,
@@ -318,7 +319,7 @@ namespace NP {
 				, bool pruning_active = false
 				, const Pruning_condition& pruning_cond = Pruning_condition()
 #endif
-			)	: state_space_data(jobs, edges, aborts, mutexes, num_cpus)
+			)	: state_space_data(jobs, edges, aborts, mutexes, hyper_period, num_cpus)
 				, aborted(false)
 				, timed_out(false)
 				, observed_deadline_miss(false)
@@ -970,17 +971,17 @@ namespace NP {
 			void explore()
 			{
 				long long last_time = get_cpu_time();
+				unsigned int num_jobs = state_space_data.num_jobs();
 				unsigned int target_depth;
-				
 				if (verbose) {
 					std::cout << "0%; 0s";
-					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
+					target_depth = std::max(num_jobs, max_depth);
 				}
 				
 				int last_num_states = num_states;
 				make_initial_node();
 
-				while (current_job_count < state_space_data.num_jobs()) {
+				while (current_job_count < num_jobs) {
 					Nodes& exploration_front = nodes();
 #ifdef CONFIG_PARALLEL
 					unsigned long long n = exploration_front.unsafe_size();
@@ -1087,6 +1088,37 @@ namespace NP {
 
 					nodes().clear();
 					current_job_count++;
+
+					if (!be_naive) {
+						// all jobs have been dispatched, check if we can stop or we should analyze one more hyper-period
+						if (current_job_count == num_jobs) {
+							// if the analysis is not finalized yet, we analyze one more observation window
+#ifdef CONFIG_PARALLEL
+							assert(nodes().unsafe_size() == 1);
+							auto& node = **(nodes().unsafe_begin());
+#else
+							assert(nodes().size() == 1);
+							auto& node = *(nodes().front());
+#endif
+							if (state_space_data.is_analysis_finished(node) == false) {
+								state_space_data.init_new_obs_window(node);
+								num_jobs += state_space_data.num_jobs();
+								width.resize(num_jobs, { 0,0 });
+							}
+						}
+						// if we reached a checkpoint (point in the analysis where all execution scenarios lead to a single node),
+						// check if we can stop the analysis
+#ifdef CONFIG_PARALLEL
+						else if (n > 1 && nodes().unsafe_size() == 1) {
+							auto& node = **(nodes().unsafe_begin());
+#else
+						else if (n > 1 && nodes().size() == 1) {
+							auto& node = *(nodes().front());
+#endif
+							if (state_space_data.is_analysis_finished(node))
+								break; // we already saw all current states in a previous hyper-period => analysis is finished
+						}
+					}
 				}
 				if (verbose) {
 #if __APPLE__

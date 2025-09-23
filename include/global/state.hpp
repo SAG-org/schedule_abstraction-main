@@ -281,6 +281,67 @@ namespace NP {
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
+			// returns true if the other state is contained in this state, i.e., all execution scenarios possible with the other state are also possible with this state
+			// `at` must be a lower bound on the time at which the next job dispatch will occur
+			bool includes(const Schedule_state<Time>& other, const Time at, const Time hyper_period) const
+			{
+				auto cropped_A_in_cropped_B = [&](const Interval<Time>& A, const Interval<Time>& B, const Time t) {
+					const Interval<Time> redA{ mod(A.min(), hyper_period), mod(A.max(), hyper_period) };
+					const Interval<Time> redB{ mod(B.min(), hyper_period), mod(B.max(), hyper_period) };
+					if (redA.max() < t) return (redB.min() <= t);
+					else if (redA.min() < t) return (redB.min() <= t && redB.max() >= redA.max());
+					else return redB.contains(redA);
+				};
+				Time earliest_next_dispatch = std::max(mod(at, hyper_period), mod(other.core_avail[0].min(), hyper_period));
+				// check that the core availability of this are super intervals of those in other
+				for (int i = 0; i < core_avail.size(); i++)
+				{
+					if (cropped_A_in_cropped_B(other.core_avail[i], core_avail[i], earliest_next_dispatch) == false)
+						return false;
+				}
+				// check that all certainly running jobs in this are also certainly running in other
+				for (const auto& rj : certain_jobs)
+				{
+					bool found = false;
+					for (const auto& rj2 : other.certain_jobs)
+					{
+						if (rj.idx == rj2.idx) {
+							if (rj.parallelism.contains(rj2.parallelism) == false)
+								return false;
+							Interval<Time> redFj { mod(rj.finish_time.min(), hyper_period), mod(rj.finish_time.max(), hyper_period) };
+							Interval<Time> redFj2 { mod(rj2.finish_time.min(), hyper_period), mod(rj2.finish_time.max(), hyper_period) };
+							if (redFj.contains(redFj2) == false)
+								return false;
+							found = true;
+							break;
+						}
+					}
+					if (!found)
+						return false;
+				}
+				
+				// check that start times of jobs with start_to_start constraints in this are super intervals of those in other
+				if (job_start_times.size() != other.job_start_times.size())
+					return false;
+				for (int i = 0; i < job_start_times.size(); i++)
+				{
+					if (job_start_times[i].job_idx != other.job_start_times[i].job_idx 
+						|| !cropped_A_in_cropped_B(other.job_start_times[i].time_interval, job_start_times[i].time_interval, earliest_next_dispatch))
+						return false;
+				}
+				// check that finish times of jobs with finish_to_start constraints in this are super intervals of those in other
+				if (job_finish_times.size() != other.job_finish_times.size())
+					return false;
+				for (int i = 0; i < job_finish_times.size(); i++)
+				{
+					if (job_finish_times[i].job_idx != other.job_finish_times[i].job_idx
+						|| !cropped_A_in_cropped_B(other.job_finish_times[i].time_interval, job_finish_times[i].time_interval, earliest_next_dispatch))
+						return false;
+				}
+				// if we reach this point, all checks passed
+				return true;
+			}
+
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 			const State_extensions<Time>& get_extensions() const
 			{
@@ -1336,6 +1397,37 @@ namespace NP {
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
 				update_ready_successors(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 				update_jobs_with_pending_succ(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
+			}
+
+			// reset the set of scheduled jobs and the internal variables that depend on it
+			void reset_scheduled_jobs(const State_space_data<Time>& state_space_data) {
+#ifdef CONFIG_PARALLEL
+				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
+#endif
+				scheduled_jobs.clear();
+				earliest_pending_release = state_space_data.get_earliest_job_arrival();
+				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
+				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
+				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
+				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, state_space_data.get_earliest_certain_gang_source_job_release());
+			}
+
+			// remove states from this node that are already contained in the list of states passed as argument
+			void prune(const std::forward_list<std::shared_ptr<State>>& other_states, const Time reference_time, const Time hyper_period) {
+				State_ref_queue new_states;
+				for (auto s : states) {
+					// check if s is included in one of the other states
+					bool included = false;
+					for (const auto& os : other_states) {
+						if (os->includes(*s, reference_time, hyper_period)) {
+							included = true;
+							break;
+						}
+					}
+					if (!included)
+						new_states.insert(s);
+				}
+				states.swap(new_states);
 			}
 
 			const unsigned int number_of_scheduled_jobs() const

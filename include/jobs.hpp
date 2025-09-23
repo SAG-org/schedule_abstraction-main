@@ -108,6 +108,13 @@ namespace NP {
 			return arrival.until();
 		}
 
+		void delay_arrival(Time delay)
+		{
+			arrival += delay;
+			deadline += delay;
+			compute_hash();
+		}
+
 		const Interval<Time>& arrival_window() const
 		{
 			return arrival;

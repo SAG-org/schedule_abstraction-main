@@ -10,6 +10,16 @@ using dtime_t = long long;
 // dense time
 using dense_t = double;
 
+dtime_t mod(dtime_t a, dtime_t b)
+{
+	return a % b;
+}
+
+dense_t mod(dense_t a, dense_t b)
+{
+	return (dense_t)std::fmod(a, b);
+}
+
 namespace Time_model {
 
 	template<typename T>
@@ -59,6 +69,4 @@ namespace Time_model {
 
 }
 
-
 #endif
-
