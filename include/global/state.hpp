@@ -283,17 +283,20 @@ namespace NP {
 
 			// returns true if the other state is contained in this state, i.e., all execution scenarios possible with the other state are also possible with this state
 			// `at` must be a lower bound on the time at which the next job dispatch will occur
-			bool includes(const Schedule_state<Time>& other, const Time at) const
+			bool includes(const Schedule_state<Time>& other, const Time at, const Time hyper_period) const
 			{
 				auto cropped_A_in_cropped_B = [&](const Interval<Time>& A, const Interval<Time>& B, const Time t) {
-					if (A.max() < t) return (B.min() <= t);
-					else if (A.min() < t) return (B.min() <= t && B.max() >= A.max());
-					else return B.contains(A);
+					const Interval<Time> redA{ mod(A.min(), hyper_period), mod(A.max(), hyper_period) };
+					const Interval<Time> redB{ mod(B.min(), hyper_period), mod(B.max(), hyper_period) };
+					if (redA.max() < t) return (redB.min() <= t);
+					else if (redA.min() < t) return (redB.min() <= t && redB.max() >= redA.max());
+					else return redB.contains(redA);
 				};
+				Time earliest_next_dispatch = std::max(mod(at, hyper_period), mod(other.core_avail[0].min(), hyper_period));
 				// check that the core availability of this are super intervals of those in other
 				for (int i = 0; i < core_avail.size(); i++)
 				{
-					if (cropped_A_in_cropped_B(other.core_avail[i], core_avail[i], at) == false)
+					if (cropped_A_in_cropped_B(other.core_avail[i], core_avail[i], earliest_next_dispatch) == false)
 						return false;
 				}
 				// check that all certainly running jobs in this are also certainly running in other
@@ -303,7 +306,11 @@ namespace NP {
 					for (const auto& rj2 : other.certain_jobs)
 					{
 						if (rj.idx == rj2.idx) {
-							if (rj.parallelism.contains(rj2.parallelism) == false || rj.finish_time.contains(rj2.finish_time) == false)
+							if (rj.parallelism.contains(rj2.parallelism) == false)
+								return false;
+							Interval<Time> redFj { mod(rj.finish_time.min(), hyper_period), mod(rj.finish_time.max(), hyper_period) };
+							Interval<Time> redFj2 { mod(rj2.finish_time.min(), hyper_period), mod(rj2.finish_time.max(), hyper_period) };
+							if (redFj.contains(redFj2) == false)
 								return false;
 							found = true;
 							break;
@@ -312,7 +319,7 @@ namespace NP {
 					if (!found)
 						return false;
 				}
-				Time earliest_next_dispatch = std::max(at, other.core_avail[0].min());
+				
 				// check that start times of jobs with start_to_start constraints in this are super intervals of those in other
 				if (job_start_times.size() != other.job_start_times.size())
 					return false;
@@ -1406,13 +1413,13 @@ namespace NP {
 			}
 
 			// remove states from this node that are already contained in the list of states passed as argument
-			void prune(const std::forward_list<std::shared_ptr<State>>& other_states, const Time reference_time) {
+			void prune(const std::forward_list<std::shared_ptr<State>>& other_states, const Time reference_time, const Time hyper_period) {
 				State_ref_queue new_states;
 				for (auto s : states) {
 					// check if s is included in one of the other states
 					bool included = false;
 					for (const auto& os : other_states) {
-						if (os->includes(*s, reference_time)) {
+						if (os->includes(*s, reference_time, hyper_period)) {
 							included = true;
 							break;
 						}

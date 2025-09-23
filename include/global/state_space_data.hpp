@@ -253,11 +253,14 @@ namespace NP {
 					return true; // no hyper-period, so all states have been analysed when all jobs were dispatched
 
 				if (checkpoints.count(n_jobs % jobs.size()) == 0) {
+					// if there is no state saved at this checkpoint saver the current states
 					save_checkpoint(n, n_jobs % jobs.size());
 					return false;
 				}
 				else {
-					n.prune(checkpoints[n_jobs % jobs.size()], get_earliest_job_arrival() + jobs_hyper_period);
+					// if we already have states saved at this checkpoint, prune the current states and check whether any state we did not analyzed yet is left
+					Time next_earliest_arrival = (n_jobs % jobs.size() == 0) ? get_earliest_job_arrival() : n.earliest_job_release();
+					n.prune(checkpoints[n_jobs % jobs.size()], mod(next_earliest_arrival, hyper_period), hyper_period);
 					if (!n.get_states()->empty()) {
 						save_checkpoint(n, n_jobs % jobs.size());
 						return false;

@@ -663,7 +663,7 @@ int main(int argc, char** argv)
 		}
 	}
 
-	want_auto_analysis_end_check = options.is_set_by_user("auto_end");
+	want_auto_analysis_end_check = options.is_set_by_user("hyper_period");
 	hyper_period = options.get("hyper_period");
 	if (want_auto_analysis_end_check && hyper_period < 1) {
 		std::cerr << "Error: invalid hyper-period argument for automatic analysis end check\n" << std::endl;
