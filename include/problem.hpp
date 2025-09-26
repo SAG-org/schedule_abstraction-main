@@ -47,6 +47,7 @@ namespace NP {
 		void post_init_checks() {
 			// at least one processor is defined
 			assert(processors_initial_state.size() > 0);
+			validate_jobs<Time>(jobs, processors_initial_state.size());
 			if (!prec.empty()) {
 				validate_prec_cstrnts<Time>(prec);
 			}

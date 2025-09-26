@@ -8,6 +8,7 @@
 #include <algorithm> // for find
 #include <functional> // for hash
 #include <exception>
+#include <string>
 
 #include "time.hpp"
 #include "interval.hpp"
@@ -37,8 +38,23 @@ namespace NP {
 			return stream;
 		}
 	};
+// Close NP temporarily so we can specialize std::hash for NP::JobID
+}
 
-	
+namespace std {
+	template<> struct hash<NP::JobID>
+	{
+		std::size_t operator()(NP::JobID const& id) const
+		{
+			std::hash<unsigned long> h;
+			return (h(id.job) << 16) ^ h(id.task);
+		}
+	};
+}
+
+// Re-open NP namespace to continue definitions
+namespace NP {
+
 	template<class Time> class Job {
 
 	public:
@@ -318,6 +334,35 @@ namespace NP {
 		}
 		return lookup;
 	}
+
+	class InvalidJobParallelism : public std::exception
+	{
+	public:
+		InvalidJobParallelism(const JobID& bad_id)
+			: ref(bad_id)
+		{
+		}
+
+		const JobID ref;
+
+		virtual const char* what() const noexcept override
+		{
+			static std::string msg;
+			msg = "invalid parallelism parameters for job T" + std::to_string(ref.task) + "J" + std::to_string(ref.job);
+			return msg.c_str();
+		}	
+
+	};
+
+	template<class Time>
+	void validate_jobs(const typename Job<Time>::Job_set& jobs, const unsigned int num_cores)
+	{
+		for (const auto& j : jobs) {
+			if (j.get_min_parallelism() > num_cores || j.get_max_parallelism() < j.get_min_parallelism()) {
+				throw InvalidJobParallelism(j.get_id());
+			}
+		}
+	}
 }
 
 namespace std {
@@ -327,16 +372,6 @@ namespace std {
 		{
 			return j.get_key();
 		}
-	};
-
-	template<> struct hash<NP::JobID>
-	{
-		std::size_t operator()(NP::JobID const& id) const
-		{
-			hash<unsigned long> h;
-			return (h(id.job) << 4) ^ h(id.task);
-		}
-
 	};
 }
 
