@@ -16,6 +16,44 @@ namespace NP {
 		Precedence_constraint(JobID from,
 			JobID to,
 			Interval<Time> delay,
+			const Job_lookup_table& jobs_lookup)
+			: from(from)
+			, to(to)
+			, delay(delay)
+			, type(finish_to_start)
+		{
+			try {
+				fromIndex = jobs_lookup.at(from);
+				toIndex = jobs_lookup.at(to);
+			}
+			catch (const std::out_of_range& e) {
+				throw InvalidJobReference(from);
+			}
+		}
+
+		Precedence_constraint(JobID from,
+			JobID to,
+			Interval<Time> delay,
+			Precedence_type type, 
+			const Job_lookup_table& jobs_lookup)
+			: from(from)
+			, to(to)
+			, delay(delay)
+			, type(type)
+		{
+			try {
+				fromIndex = jobs_lookup.at(from);
+				toIndex = jobs_lookup.at(to);
+			}
+			catch (const std::out_of_range& e) {
+				throw InvalidJobReference(from);
+			}
+		}
+
+		// deprecated, for backward compatibility only
+		Precedence_constraint(JobID from,
+			JobID to,
+			Interval<Time> delay,
 			const typename Job<Time>::Job_set& jobs)
 			: from(from)
 			, to(to)
@@ -28,6 +66,7 @@ namespace NP {
 			toIndex = (Job_index)(&jobB - &(jobs[0]));
 		}
 
+		// deprecated, for backward compatibility only
 		Precedence_constraint(JobID from,
 			JobID to,
 			Interval<Time> delay,

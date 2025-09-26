@@ -91,14 +91,15 @@ static Analysis_result analyze(
 {
 	// Parse input files and create NP scheduling problem description
 	typename NP::Job<Time>::Job_set jobs = in_is_yaml ? NP::parse_yaml_job_file<Time>(in) : NP::parse_csv_job_file<Time>(in);
+	auto jobs_lookup_table = NP::make_job_lookup_table<Time>(jobs);
 
 	// Parse precedence constraints
-	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in, jobs) : NP::parse_precedence_file<Time>(prec_in, jobs);
+	std::vector<NP::Precedence_constraint<Time>> edges = dag_is_yaml ? NP::parse_yaml_dag_file<Time>(prec_in, jobs_lookup_table) : NP::parse_precedence_file<Time>(prec_in, jobs_lookup_table);
 
 	// Parse exclusion (mutex) constraints
 	std::vector<NP::Exclusion_constraint<Time>> mutexes;
 	if (want_mutexes) {
-		mutexes = excl_is_yaml ? NP::parse_yaml_mutex_file<Time>(excl_in, jobs) : NP::parse_mutex_file<Time>(excl_in, jobs);
+		mutexes = excl_is_yaml ? NP::parse_yaml_mutex_file<Time>(excl_in, jobs_lookup_table) : NP::parse_mutex_file<Time>(excl_in, jobs_lookup_table);
 	}
 
 	// Parse platform specification if provided

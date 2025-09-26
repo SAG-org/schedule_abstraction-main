@@ -16,6 +16,43 @@ namespace NP {
 		Exclusion_constraint(JobID jobA,
 			JobID jobB,
 			Interval<Time> delay, 
+			const Job_lookup_table& jobs_lookup)
+			: jobA(jobA)
+			, jobB(jobB)
+			, delay(delay)
+			, type(exec_exclusion)
+		{
+			try {
+				jobA_idx = jobs_lookup.at(jobA);
+				jobB_idx = jobs_lookup.at(jobB);
+			}
+			catch (const std::out_of_range& e) {
+				throw InvalidJobReference(jobA);
+			}
+		}
+
+		Exclusion_constraint(JobID jobA,
+			JobID jobB,
+			Interval<Time> delay,
+			Exclusion_type type, const Job_lookup_table& jobs_lookup)
+			: jobA(jobA)
+			, jobB(jobB)
+			, delay(delay)
+			, type(type)
+		{
+			try {
+				jobA_idx = jobs_lookup.at(jobA);
+				jobB_idx = jobs_lookup.at(jobB);
+			}
+			catch (const std::out_of_range& e) {
+				throw InvalidJobReference(jobA);
+			}
+		}
+
+		// deprecated, for backward compatibility only
+		Exclusion_constraint(JobID jobA,
+			JobID jobB,
+			Interval<Time> delay,
 			const typename Job<Time>::Job_set& jobs)
 			: jobA(jobA)
 			, jobB(jobB)
@@ -28,6 +65,7 @@ namespace NP {
 			jobB_idx = (Job_index)(&jB - &(jobs[0]));
 		}
 
+		// deprecated, for backward compatibility only
 		Exclusion_constraint(JobID jobA,
 			JobID jobB,
 			Interval<Time> delay,
@@ -42,6 +80,7 @@ namespace NP {
 			jobA_idx = (Job_index)(&jA - &(jobs[0]));
 			jobB_idx = (Job_index)(&jB - &(jobs[0]));
 		}
+
 
 		JobID get_jobA() const
 		{

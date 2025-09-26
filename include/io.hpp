@@ -123,7 +123,7 @@ namespace NP {
 
 	//Function that helps parse selfsuspending tasks file
 	template<class Time>
-	Precedence_constraint<Time> parse_precedence_constraint(std::istream &in, typename NP::Job<Time>::Job_set& jobs)
+	Precedence_constraint<Time> parse_precedence_constraint(std::istream &in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		unsigned long from_tid, from_jid, to_tid, to_jid;
 		Time delay_min=0, delay_max=0;
@@ -165,11 +165,11 @@ namespace NP {
 		return Precedence_constraint<Time>{JobID{from_jid, from_tid},
 											JobID{to_jid, to_tid},
 											Interval<Time>{delay_min, delay_max},
-											type, jobs};
+											type, jobs_lookup};
 	}
 
 	template<class Time>
-	std::vector<Precedence_constraint<Time>> parse_precedence_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
+	std::vector<Precedence_constraint<Time>> parse_precedence_file(std::istream& in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		// skip column headers
 		next_line(in);
@@ -178,14 +178,28 @@ namespace NP {
 		// parse all rows
 		while (more_data(in)) {
 			// each row contains one self-suspending constraint
-			cstr.push_back(parse_precedence_constraint<Time>(in, jobs));
+			cstr.push_back(parse_precedence_constraint<Time>(in, jobs_lookup));
 			next_line(in);
 		}
 		return cstr;
 	}
 
+	// for backward compatibility only
 	template<class Time>
-	inline std::vector<Precedence_constraint<Time>> parse_yaml_dag_file(std::istream& in, typename NP::Job<Time>::Job_set jobs)
+	std::vector<Precedence_constraint<Time>> parse_precedence_file(std::istream& in, const typename NP::Job<Time>::Job_set& jobs)
+	{
+		return parse_precedence_file<Time>(in, NP::make_job_lookup_table<Time>(jobs));
+	}
+
+	// for backward compatibility only
+	template<class Time>
+	Precedence_constraint<Time> parse_precedence_constraint(std::istream& in, const typename NP::Job<Time>::Job_set& jobs)
+	{
+		return parse_precedence_constraint<Time>(in, NP::make_job_lookup_table<Time>(jobs));
+	}
+
+	template<class Time>
+	inline std::vector<Precedence_constraint<Time>> parse_yaml_dag_file(std::istream& in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		std::vector<Precedence_constraint<Time>> edges;
 		// Clear any flags
@@ -212,12 +226,12 @@ namespace NP {
 							auto tid = succ[0].as<unsigned long>();
 							auto jid = succ[1].as<unsigned long>();
 							auto to = JobID(jid, tid);
-							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs));
+							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs_lookup));
 						} else {
 							auto tid = succ["Task ID"].as<unsigned long>();
 							auto jid = succ["Job ID"].as<unsigned long>();
 							auto to = JobID(jid, tid);
-							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs));
+							edges.push_back(Precedence_constraint<Time>(from, to, {0, 0}, jobs_lookup));
 						}
 					}
 				}
@@ -231,7 +245,7 @@ namespace NP {
 
 	//Function that helps parse selfsuspending tasks file
 	template<class Time>
-	Exclusion_constraint<Time> parse_mutex_constraint(std::istream &in, typename NP::Job<Time>::Job_set& jobs)
+	Exclusion_constraint<Time> parse_mutex_constraint(std::istream &in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		unsigned long jobA_tid, jobA_jid, jobB_tid, jobB_jid;
 		Time delay_min=0, delay_max=0;
@@ -273,11 +287,11 @@ namespace NP {
 		return Exclusion_constraint<Time>{JobID{jobA_jid, jobA_tid},
 											JobID{jobB_jid, jobB_tid},
 											Interval<Time>{delay_min, delay_max},
-											type, jobs};
+											type, jobs_lookup};
 	}
 
 	template<class Time>
-	std::vector<Exclusion_constraint<Time>> parse_mutex_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
+	std::vector<Exclusion_constraint<Time>> parse_mutex_file(std::istream& in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		// skip column headers
 		next_line(in);
@@ -286,14 +300,28 @@ namespace NP {
 		// parse all rows
 		while (more_data(in)) {
 			// each row contains one mutual exclusion constraint
-			cstr.push_back(parse_mutex_constraint<Time>(in, jobs));
+			cstr.push_back(parse_mutex_constraint<Time>(in, jobs_lookup));
 			next_line(in);
 		}
 		return cstr;
 	}
 
+	// for backward compatibility only
 	template<class Time>
-	inline std::vector<Exclusion_constraint<Time>> parse_yaml_mutex_file(std::istream& in, typename NP::Job<Time>::Job_set& jobs)
+	std::vector<Exclusion_constraint<Time>> parse_mutex_file(std::istream& in, const typename NP::Job<Time>::Job_set& jobs)
+	{
+		return parse_mutex_file<Time>(in, NP::make_job_lookup_table<Time>(jobs));
+	}
+
+	// for backward compatibility only
+	template<class Time>
+	Exclusion_constraint<Time> parse_mutex_constraint(std::istream& in, const typename NP::Job<Time>::Job_set& jobs)
+	{
+		return parse_mutex_constraint<Time>(in, NP::make_job_lookup_table<Time>(jobs));
+	}
+
+	template<class Time>
+	inline std::vector<Exclusion_constraint<Time>> parse_yaml_mutex_file(std::istream& in, const typename NP::Job_lookup_table& jobs_lookup)
 	{
 		std::vector<Exclusion_constraint<Time>> mutex_constraints;
 		// Clear any flags
@@ -320,12 +348,12 @@ namespace NP {
 							auto tid = excl[0].as<unsigned long>();
 							auto jid = excl[1].as<unsigned long>();
 							auto jobB = JobID(jid, tid);
-							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs));
+							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs_lookup));
 						} else {
 							auto tid = excl["Task ID"].as<unsigned long>();
 							auto jid = excl["Job ID"].as<unsigned long>();
 							auto jobB = JobID(jid, tid);
-							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs));
+							mutex_constraints.push_back(Exclusion_constraint<Time>(jobA, jobB, {0, 0}, jobs_lookup));
 						}
 					}
 				}
