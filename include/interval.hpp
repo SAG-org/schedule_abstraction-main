@@ -175,6 +175,11 @@ template<class T> class Interval {
 		b = std::min(ub, b);
 	}
 
+	void reduce_to(T t)
+	{
+		a = std::min(t, a);
+	}
+
 	void extend_to(T b_at_least)
 	{
 		b = std::max(b_at_least, b);

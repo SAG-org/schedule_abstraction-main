@@ -38,6 +38,10 @@
 #include "global/secateur.hpp"
 #endif
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+#include "global/extension/mk-firm/mk_extension.hpp"
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 namespace NP {
 
 	namespace Global {
@@ -69,6 +73,9 @@ namespace NP {
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
 				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+					prob.problem_extensions,
+#endif
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -92,6 +99,9 @@ namespace NP {
 
 				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
 				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+					prob.problem_extensions,
+#endif
 					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
@@ -209,6 +219,32 @@ namespace NP {
 				return cpu_time;
 			}
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+			// return the results of a specific analysis extension in a string stream
+			template <typename Extension_type>
+			std::ostringstream get_results()
+			{
+				Extension_type* mk_data = state_space_data.get_extensions().get<Extension_type>();
+				if (mk_data == nullptr) {
+					std::cerr << "Error: analysis extension is not available." << std::endl;
+					return std::ostringstream();
+				}
+				return mk_data->get_results(state_space_data);
+			}
+
+			// return the results of a specific analysis extension in a extension specific format
+			template <typename Extension_type, typename Result_type>
+			Result_type get_results() const
+			{
+				Extension_type* mk_data = state_space_data.get_extensions().get<Extension_type>();
+				if (mk_data == nullptr) {
+					std::cerr << "Error: analysis extension is not available." << std::endl;
+					return Result_type();
+				}
+				return mk_data->get_results();
+			}
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 #ifdef CONFIG_PARALLEL
 			// Thread-safe concurrent queue for storing nodes during parallel execution
 			typedef tbb::concurrent_queue<Node_ref> Nodes;
@@ -301,6 +337,9 @@ namespace NP {
 				const Abort_actions& aborts,
 				const Mutex_constraints& mutexes,
 				const std::vector<Interval<Time>>& cores_initial_state,
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				const Problem_extensions& problem_extensions,
+#endif
 				Merge_options merge_options,
 				double max_cpu_time = 0,
 				long max_memory = 0,
@@ -373,6 +412,15 @@ namespace NP {
 					rta_mutexes[i] = std::make_unique<std::mutex>();
 				}
 #endif
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				// check if the MK analysis extension is registered
+				auto mk_ext = problem_extensions.get<MK_analysis::MK_problem_extension>();
+				if (mk_ext)
+				{
+					// If yes, activate MK analysis
+					MK_analysis::MK_extension<Time>::activate(state_space_data, jobs.size(), mk_ext->get_mk_constraints());
+				}
+#endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
 		private:
@@ -1120,6 +1168,5 @@ namespace std
 		}
 	};
 }
-
 
 #endif
