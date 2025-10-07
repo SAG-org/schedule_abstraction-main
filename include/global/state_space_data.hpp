@@ -17,6 +17,7 @@
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 #include "global/extension/state_space_data_extension.hpp"
+#include "global/extension/state_extension.hpp"
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
 namespace NP {
@@ -111,7 +112,9 @@ namespace NP {
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 			// possible extensions of the state space data (e.g., for task chains analysis)
-			State_space_data_extensions extensions;
+			State_space_data_extensions<Time> extensions;
+			// Registry for state extension types
+			State_extension_registry<Time> state_extension_registry;
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 					
 		public:
@@ -220,9 +223,24 @@ namespace NP {
 			}
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
-			const State_space_data_extensions& get_extensions() const
+			const State_space_data_extensions<Time>& get_extensions() const
 			{
 				return extensions;
+			}
+
+			State_space_data_extensions<Time>& get_extensions()
+			{
+				return extensions;
+			}
+
+			const State_extension_registry<Time>& get_state_extension_registry() const
+			{
+				return state_extension_registry;
+			}
+
+			State_extension_registry<Time>& get_state_extension_registry()
+			{
+				return state_extension_registry;
 			}
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 

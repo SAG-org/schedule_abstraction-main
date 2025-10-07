@@ -107,6 +107,9 @@ namespace NP {
 				, earliest_certain_successor_job_dispatch{ Time_model::constants<Time>::infinity() }
 				, earliest_certain_gang_source_job_dispatch{ state_space_data.get_earliest_certain_gang_source_job_release() }
 				, min_next_prio_job{ NULL }
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				, extensions(state_space_data.get_state_extension_registry())
+#endif
 			{
 				assert(core_avail.size() > 0);
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
@@ -120,6 +123,9 @@ namespace NP {
 				, earliest_certain_successor_job_dispatch{ Time_model::constants<Time>::infinity() }
 				, earliest_certain_gang_source_job_dispatch{ state_space_data.get_earliest_certain_gang_source_job_release() }
 				, min_next_prio_job{ NULL }
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				, extensions(state_space_data.get_state_extension_registry())
+#endif
 			{
 				assert(core_avail.size() > 0);
 				std::vector<Time> amin, amax;
@@ -153,6 +159,9 @@ namespace NP {
 				const State_space_data<Time>& state_space_data,
 				Time next_source_job_rel,
 				unsigned int ncores = 1)
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				: extensions(state_space_data.get_state_extension_registry())
+#endif
 			{
 				const auto& constraints = state_space_data.inter_job_constraints;
 				const Job_precedence_set & finished_predecessors = state_space_data.get_finished_jobs_if_starts(j);

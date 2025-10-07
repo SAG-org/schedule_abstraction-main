@@ -94,22 +94,48 @@ namespace NP {
 			virtual void merge(size_t extension_id, const Schedule_state<Time>& this_state, const Schedule_state<Time>& other) {}
 		};
 
+		// Registry for State_extension types - holds creators and mappings
+		// Owned by State_space_data or similar owning class
+		template<class Time>
+		class State_extension_registry {
+		public:
+			using Creator = std::function<std::unique_ptr<State_extension<Time>>()>;
+
+			State_extension_registry() = default;
+
+			// Register an extension type with its state_space_data extension ID
+			// Returns the index of the newly registered extension
+			size_t register_extension(size_t state_space_data_ext_id, Creator creator) {
+				creators_.push_back(std::move(creator));
+				state_space_data_ext_ids_.push_back(state_space_data_ext_id);
+				return creators_.size() - 1;
+			}
+
+			// Template helper for registering extension types
+			template<class Extension>
+			size_t register_extension(size_t state_space_data_ext_id) {
+				return register_extension(state_space_data_ext_id, 
+					[]() { return std::make_unique<Extension>(); });
+			}
+
+			const std::vector<Creator>& creators() const { return creators_; }
+			const std::vector<size_t>& state_space_data_ext_ids() const { return state_space_data_ext_ids_; }
+
+		private:
+			std::vector<Creator> creators_;
+			std::vector<size_t> state_space_data_ext_ids_;
+		};
+
 		template<class Time>
 		class State_extensions {
 		public:
-			explicit State_extensions() {
-				create_extensions();
+			// Construct State_extensions from a registry
+			explicit State_extensions(const State_extension_registry<Time>& registry) {
+				create_extensions(registry);
 			}
 
-			// register an extension of type Extension in the State_extensions manager
-			// return the ID of the newly registered extension
-			template<class Extension>
-			static size_t register_extension(size_t state_space_data_ext_ID) {
-				// add one constructor for each signature in Constructor_signatures
-				add_constructor_for<Extension>();
-				state_space_data_extensions.push_back(state_space_data_ext_ID);
-				return get_registry().size() - 1; // return the index of the newly registered extension
-			}
+			// Default constructor creates empty extensions (for backwards compatibility)
+			explicit State_extensions() = default;
 
 			// returns a const pointer to the extension with id, or nullptr if not found
 			template<class Extension>
@@ -168,34 +194,16 @@ namespace NP {
 			// vector of all registered extensions after their construction
 			std::vector<std::unique_ptr<State_extension<Time>>> extensions;
 			// vector of state space data extension IDs for each registered extension
-			static std::vector<size_t> state_space_data_extensions;
+			std::vector<size_t> state_space_data_extensions;
 
-			// type-erased creator function to construct extensions with different signatures
-			using Creator = std::function<std::unique_ptr<State_extension<Time>>()>;
-
-			// registry of constructors for each signature of the extensions
-			static std::vector<Creator>& get_registry() {
-				static std::vector<Creator> v;
-				return v;
-			}
-
-			// add a constructor for a specific extension type and signature
-			template<class Extension>
-			static void add_constructor_for() {
-				auto& reg = get_registry();
-				reg.push_back([]() { return std::make_unique<Extension>(); });
-			}
-
-			// construct all registered extensions with the given arguments
-			void create_extensions() {
-				auto& reg = get_registry();
-				for (auto& c : reg) {
+			// construct all registered extensions from the registry
+			void create_extensions(const State_extension_registry<Time>& registry) {
+				state_space_data_extensions = registry.state_space_data_ext_ids();
+				for (auto& c : registry.creators()) {
 					extensions.push_back(c());
 				}
 			}
 		};
-
-		template<class Time> std::vector<size_t> State_extensions<Time>::state_space_data_extensions;
 	}
 }
 #endif // !STATE_EXTENSION_HPP

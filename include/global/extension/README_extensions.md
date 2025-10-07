@@ -20,29 +20,30 @@ The key principle is that the extension is a passive observer. It gathers data b
 This mechanism is **not** the right place if you need to modify the behavior of the scheduler. Do **not** use an analysis extension if you want to:
 
 -   Modify scheduling choices.
--   Change which job is selected to run next.
+-   Change which jobs may be selected to run next.
 -   Alter which core a job is dispatched on.
+-	Change how a system state is encoded and/or evolves.
 
-If you need to influence the exploration, you should instead alter the core exploration logic or the job priority rules.
+If you need to influence the state-space exploration, you should instead alter the core exploration logic or the job priority rules.
 
 ## How to Implement an Analysis Extension
 
-Implementing an extension involves creating a few cooperating classes that hook into the state exploration lifecycle.
+Implementing an extension involves creating a few cooperating classes that hook into the state-space exploration lifecycle.
 
 ### Prerequisites: Enabling Extensions
 
-First, you must enable extensions at compile time. This is typically done by adding `-DCONFIG_ANALYSIS_EXTENSIONS` to your compiler flags or enabling the corresponding option in your CMake configuration. Without this flag, the core data structures will not contain the necessary extension hooks, and your extension will not be activated.
+First, you must enable extensions at compile time. This is done by adding `-DCONFIG_ANALYSIS_EXTENSIONS` to your compiler flags or enabling the corresponding option in your CMake configuration. Without this flag, the core data structures will not contain the necessary extension hooks, and no extension will not be activated.
 
 ### The Building Blocks
 
 An analysis extension is composed of up to four C++ classes:
 
 1.  **Problem Extension (Optional)**
-    -   Derives from `Problem_extension<YourProblemExtension>`.
-    -   Holds static configuration parsed from an input file (e.g., a YAML file). This data is read once and is immutable during the analysis. It can contain a list of entities to monitor, configuration flags, or other inputs required by your analysis.
+    -   Derives from `Problem_extension`.
+    -   Holds static configuration parsed from an input file (e.g., a YAML or csv file). This data is read once and is immutable during the analysis. It can contain a list of entities to monitor, configuration flags, or other inputs required by your analysis.
 
 2.  **State Space Data Extension**
-    -   Derives from `State_space_data_extension`.
+    -   Derives from `State_space_data_extension<Time>`.
     -   There is a single instance of this class per state space exploration. It is shared by all states.
     -   Use it to store global data: aggregated results (max/min values), lookup tables, or pre-computed values that are needed by per-state calculations.
 
@@ -52,7 +53,7 @@ An analysis extension is composed of up to four C++ classes:
     -   It holds per-state data and implements the hook methods to update this data as new states are created and merged.
 
 4.  **Activation Wrapper**
-    -   A simple templated class that inherits from `Extension<Time, StateExt, SpaceDataExt>`.
+    -   A simple templated class that inherits from `Extension<Time, StateExt, StateSpaceDataExt>`.
     -   It wires the state and space-data extensions together and provides a static `activate()` method to register them with the analysis framework.
 
 ### The Lifecycle and Key Methods (Hooks)
@@ -69,11 +70,11 @@ The framework invokes virtual methods on your `State_extension` subclass at key 
 
 ### Step-by-Step Guide
 
-1.  **(Optional) Define a Problem Extension:** If your analysis requires configuration, create a class that inherits from `Problem_extension<...>`.
+1.  **(Optional) Define a Problem Extension:** If your analysis requires configuration, create a class that inherits from `Problem_extension`.
 2.  **Define the Space Data Extension:** Create a class that inherits from `State_space_data_extension` to hold global/aggregated data/results.
 3.  **Define the State Extension:** Create a class that inherits from `State_extension<Time>`. Implement the core logic here by overriding the `construct`, `reset`, and `merge` hooks.
 4.  **Define the Activation Wrapper:** Create a simple wrapper class that inherits from `Extension<Time, YourStateExtension, YourSpaceDataExtension>`. There is normally no need to add any method or data to that class.
-5.  **Activate the Extension:** In your application's setup code (e.g., in the main function or in the constructor of `State_space<Time>`), call `YourAnalysisExtension<Time>::activate(...)` **once**. Any arguments passed to `activate()` will be forwarded to the constructor of your state space data extension.
+5.  **Activate the Extension:** In your application's setup code (e.g., in the constructor of `State_space<Time>`), call `YourAnalysisExtension<Time>::activate(...)` **once**. Any arguments passed to `activate(...)` will be forwarded to the constructor of your state space data extension. **IMPORTANT:** if you call `YourAnalysisExtension<Time>::activate(...)` more than once, then the extension `YourAnalysisExtension<Time>` will also be instantiated and executed more than once.
 
 ### Minimal Implementation Template
 
@@ -86,14 +87,14 @@ Here is a skeletal example. You can use this as a starting point for your own ex
 #include "problem/problem_extension.h"
 
 // 1. (Optional) Problem-level data holder
-struct MyProblemExtension : public Problem_extension<MyProblemExtension> {
+struct MyProblemExtension : public Problem_extension {
 	// configuration data parsed once
 	explicit MyProblemExtension(/* config args */) { /* store config */ }
 };
 
 // 2. Space (global) data
 template<class Time>
-class MySpaceDataExtension : public State_space_data_extension {
+class MySpaceDataExtension : public State_space_data_extension<Time> {
 public:
 	// global lookup tables, aggregates, counters...
 	explicit MySpaceDataExtension(/* forwarded args from activate */) {
@@ -148,9 +149,9 @@ public:
 template<class Time>
 class MyAnalysisExtension : public Extension<Time, MyStateExtension<Time>, MySpaceDataExtension<Time>> {};
 
-// 5. Activation (in the constructor of State_space or test fixture, before starting to explore)
+// 5. Activation (in the constructor of State_space, before starting to explore)
 void register_my_extension() {
-	MyAnalysisExtension<MyTimeType>::activate(/* args to MySpaceDataExtension ctor */);
+	MyAnalysisExtension<MyTimeType>::activate(state_space_data, /* args to MySpaceDataExtension ctor */);
 }
 ```
 
@@ -179,4 +180,4 @@ The method `get<YourStateExt<Time>>()` retrieves extensions with dynamic casting
 -   **Merge Conservatively:** Your `merge` logic is crucial for correctness. The merged state must represent a superset of the possibilities of the original states. For example, when merging intervals, take the union. When merging a "max value seen so far", take the maximum of both. An incorrect merge can lead to unsound results.
 -   **Manage Memory Wisely** Tens of thousands of states may co-exist in memory. Keep the memory footprint of your state extension as small as possible.
 -   **Thread Safety** If the exploration is single-threaded (typical), no extra synchronization is needed. If you later parallelize state expansion, confine all mutation during a child state construction to that child’s extension object. Space-level aggregates should either use atomic operations or be updated in a controlled (serialized) post-processing step.
--  **Enabling / Disabling** The extension can be enabled for each analysis independently without need to recompile (for example, based on command line arguments or custom configuration files). *Do not enable* your extension (by not calling `MyAnalysisExtension<MyTimeType>::activate(...)`) whenever it is not required to reduce the analysis runtime and memory overhead. 
+-  **Enabling / Disabling** The extension can be enabled for each analysis independently without need to recompile (for example, based on command line arguments or custom configuration files). *Don't enable* your extension whenever it is not required to reduce the analysis runtime and memory overhead, i.e., do not call `MyAnalysisExtension<MyTimeType>::activate(...)` unless you need to extecute that extension. 

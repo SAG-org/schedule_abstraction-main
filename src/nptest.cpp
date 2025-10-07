@@ -11,6 +11,11 @@
 #include "io.hpp"
 #include "clock.hpp"
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+#include "global/extension/mk-firm/mk_firm.hpp"
+#include "global/extension/mk-firm/mk_extension.hpp"
+#endif
+
 #define MAX_PROCESSORS 512
 
 // command line options
@@ -29,6 +34,11 @@ static unsigned int num_threads = 0;
 #ifdef CONFIG_PRUNING
 static bool want_focus = false;
 static std::string focus_file;
+#endif
+
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+static std::string mk_file;
+static bool want_mk;
 #endif
 
 static bool want_precedence = false;
@@ -73,6 +83,9 @@ struct Analysis_result {
 	std::string response_times_csv;
 	std::string width_evolution_csv;
 	std::string deadline_mis_info;
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+	std::string mk_results;
+#endif
 };
 
 
@@ -134,6 +147,22 @@ static Analysis_result analyze(
 #ifdef CONFIG_PARALLEL
 	opts.parallel_enabled = want_parallel;
 	opts.num_threads = num_threads;
+#endif
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+	auto mk_stream = std::ifstream();
+	if (want_mk) {
+		mk_stream.open(mk_file);
+		//check the extension of the file
+		std::string ext = mk_file.substr(mk_file.find_last_of(".") + 1);
+		if (ext == "csv" or ext == "CSV") {
+			std::cerr << "Error: YAML mk file is not supported yet, use CSV format instead." << std::endl;
+			exit(1);
+		}
+		// Parse the task chain file
+		auto mk_constraints = NP::Global::MK_analysis::parse_mk_constraints_csv(mk_stream);
+		// Register the task chain analysis extension in the scheduling problem definition
+		problem.problem_extensions.register_extension<NP::Global::MK_analysis::MK_problem_extension>(mk_constraints);
+	}
 #endif
 #ifdef CONFIG_PRUNING
 	// set pruning options if requested
@@ -203,9 +232,20 @@ static Analysis_result analyze(
 	bool schedulable = space->is_schedulable();
 	if(want_deadline_miss_info && !schedulable) {
 		auto deadline_miss_state = space->get_deadline_miss_state();
-		deadline_miss_state.first->export_node(deadline_miss_stream, jobs);
-		deadline_miss_state.second->export_state(deadline_miss_stream, jobs);
+		if (deadline_miss_state.first != nullptr) {
+			deadline_miss_state.first->export_node(deadline_miss_stream, jobs);
+		}
+		if (deadline_miss_state.second != nullptr) {
+			deadline_miss_state.second->export_state(deadline_miss_stream, jobs);
+		}
 	}
+
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+	auto mk_results = std::ostringstream();
+	if (want_mk) {
+		mk_results = space->get_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
+	}
+#endif
 
 	Analysis_result results = Analysis_result{
 		space->is_schedulable(),
@@ -223,6 +263,9 @@ static Analysis_result analyze(
 		rta.str(),
 		width_stream.str(),
 		deadline_miss_stream.str()
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+		, mk_results.str()
+#endif
 	};
 	return results;
 }
@@ -543,6 +586,10 @@ int main(int argc, char** argv)
 		.help("If 'save-graph is set', allows to pass a YAML file configuring what part of the state graph is recorded and what is printed in the state graph. Default: complete state space is recorded and default info is printed.")
 		.set_default("");
 
+	parser.add_option("--mk").dest("mk_file")
+		.help("[experimental] name of the file that contains the mk-firm specifications (CSV)")
+		.set_default("");
+
 #ifdef CONFIG_PARALLEL
 	parser.add_option("--parallel").dest("parallel").set_default("1")
 		.action("store_const").set_const("1")
@@ -634,6 +681,13 @@ int main(int argc, char** argv)
 		std::cout << "[**] Note: support for mutex constraints is only experimental for now." << std::endl;
 	excl_file = (const std::string&) options.get("excl_file");
 
+	want_mk = options.is_set_by_user("mk_file");
+	if (want_mk && parser.args().size() > 1) {
+		std::cerr << "[!!] Warning: multiple job sets "
+		          << "with a single mk-firm specifications file specified."
+		          << std::endl;
+	}
+	mk_file = (const std::string&) options.get("mk_file");
 
 	platform_defined = options.is_set_by_user("platform_file");
 	if (platform_defined) {
