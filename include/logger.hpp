@@ -153,12 +153,12 @@ namespace NP {
 
 				Time earliest_start_time() const
 				{
-					return finish_range.from() - scheduled->least_exec_time();
+					return finish_range.from() - scheduled->least_exec_time(parallelism);
 				}
 
 				Time latest_start_time() const
 				{
-					return finish_range.upto() - scheduled->maximal_exec_time();
+					return finish_range.upto() - scheduled->maximal_exec_time(parallelism);
 				}
 
 				unsigned int parallelism_level() const
