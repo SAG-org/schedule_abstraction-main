@@ -109,6 +109,16 @@ namespace NP {
 			// number of cores
 			const unsigned int num_cpus;
 
+			// set of jobs
+			Workload _jobs;
+
+			const Time jobs_hyper_period;
+			Time start_obs_window;
+
+			// list of states we started an observation window with
+			typedef std::forward_list<std::shared_ptr<State>> Checkpoint;
+			std::unordered_map<unsigned int, Checkpoint> checkpoints;
+
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 			// possible extensions of the state space data (e.g., for task chains analysis)
 			State_space_data_extensions extensions;
@@ -125,23 +135,27 @@ namespace NP {
 			const std::vector<Job_precedence_set>& must_be_finished_jobs;
 			const std::vector<Inter_job_constraints>& inter_job_constraints;
 
-			State_space_data(const Workload& jobs,
+			State_space_data(const Workload& workload,
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
 				const Mutex_constraints& mutexes,
-				unsigned int num_cpus)
-				: jobs(jobs)
+				const Time hyper_period,
+				const unsigned int num_cpus)
+				: _jobs(workload)
+				, jobs(_jobs)
 				, num_cpus(num_cpus)
 				, successor_jobs_by_latest_arrival(_successor_jobs_by_latest_arrival)
 				, sequential_source_jobs_by_latest_arrival(_sequential_source_jobs_by_latest_arrival)
 				, gang_source_jobs_by_latest_arrival(_gang_source_jobs_by_latest_arrival)
 				, jobs_by_earliest_arrival(_jobs_by_earliest_arrival)
 				, jobs_by_deadline(_jobs_by_deadline)
-				, _must_be_finished_jobs(jobs.size())
+				, _must_be_finished_jobs(workload.size())
 				, must_be_finished_jobs(_must_be_finished_jobs)
-				, _inter_job_constraints(jobs.size())
+				, _inter_job_constraints(workload.size())
 				, inter_job_constraints(_inter_job_constraints)
-				, abort_actions(jobs.size(), NULL)
+				, abort_actions(workload.size(), NULL)
+				, start_obs_window(Time(0))
+				, jobs_hyper_period(hyper_period)
 			{
 				for (const auto& e : edges) {
 					if (e.get_type() == start_to_start) {
@@ -216,6 +230,42 @@ namespace NP {
 				for (const Abort_action<Time>& a : aborts) {
 					const Job<Time>& j = lookup<Time>(jobs, a.get_id());
 					abort_actions[j.get_job_index()] = &a;
+				}
+
+				checkpoints[0].push_front(std::make_shared<State>(num_cpus, *this));
+			}
+
+			void init_new_obs_window(Node& n) {
+				move_to_next_obs_window();
+				n.reset_scheduled_jobs(*this);
+			}
+
+			// returns true if all possible states reachable by the system have been analysed
+			bool is_analysis_finished(Node& n) {
+				unsigned int n_jobs = n.number_of_scheduled_jobs();
+				if (n_jobs < jobs.size()) {
+					if (jobs_hyper_period > Time(0))
+						save_checkpoint(n, n_jobs);
+					return false; // all jobs have not been scheduled
+				}
+
+				if (jobs_hyper_period == Time(0))
+					return true; // no hyper-period, so all states have been analysed when all jobs were dispatched
+
+				if (checkpoints.count(n_jobs % jobs.size()) == 0) {
+					// if there is no state saved at this checkpoint saver the current states
+					save_checkpoint(n, n_jobs % jobs.size());
+					return false;
+				}
+				else {
+					// if we already have states saved at this checkpoint, prune the current states and check whether any state we did not analyzed yet is left
+					Time next_earliest_arrival = (n_jobs % jobs.size() == 0) ? get_earliest_job_arrival() : n.earliest_job_release();
+					n.prune(checkpoints[n_jobs % jobs.size()], mod(next_earliest_arrival, hyper_period), hyper_period);
+					if (!n.get_states()->empty()) {
+						save_checkpoint(n, n_jobs % jobs.size());
+						return false;
+					}
+					return true; // all states reachable in the observation window have been analysed
 				}
 			}
 
@@ -703,6 +753,20 @@ namespace NP {
 			}
 
 		private:
+
+			void move_to_next_obs_window() {
+				for (Job<Time>& j : _jobs) {
+					j.delay_arrival(jobs_hyper_period);
+				}
+				start_obs_window += jobs_hyper_period;
+			}
+
+			void save_checkpoint(const Node& n, unsigned int checkpoint_id) {
+				const auto& states = *(n.get_states());
+				for (const auto s : states) {
+					checkpoints[checkpoint_id].emplace_front(s);
+				}
+			}
 
 			bool not_dispatched(const Node& n, const Job<Time>& j) const
 			{
