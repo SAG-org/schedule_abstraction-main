@@ -39,7 +39,7 @@ public:
     }
 
     void release(const std::shared_ptr<T>& obj) {
-        if (!obj.unique())
+        if (obj.use_count() != 1)
             return; // Do not release if the object is shared
 #ifdef CONFIG_PARALLEL
         pool.push(obj);

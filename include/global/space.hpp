@@ -1082,7 +1082,7 @@ namespace NP {
 										if (aborted) break;
 
 										// Clean up nodes that are no longer referenced
-										if (node.unique()) {
+										if (node.use_count() == 1) {
 											auto states = node->get_states();
 											for (auto s = states->begin(); s != states->end(); s++) {
 												release_state(*s);
@@ -1101,7 +1101,7 @@ namespace NP {
 							if (aborted)
 								break;
 
-							if (node.unique()) {
+							if (node.use_count() == 1) {
 								auto states = node->get_states();
 								for (auto s = states->begin(); s != states->end(); s++) {
 									release_state(*s);
@@ -1119,7 +1119,7 @@ namespace NP {
 							break;
 
 						// If the node is not refered to anymore, we can reuse the node and state objects for other states.
-						if (node.unique()) {
+						if (node.use_count() == 1) {
 							auto states = node->get_states();
 							for (auto s = states->begin(); s != states->end(); s++) {
 								release_state(*s);

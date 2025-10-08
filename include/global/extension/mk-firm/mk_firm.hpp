@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-#include <bitset>
+#include <bit>
 #include "io.hpp"
 
 namespace NP {
@@ -26,7 +26,7 @@ namespace NP {
             template<class Time>
             class Misses_window {
 				// Using bitsets to store 32 bits representing misses in the window
-                typedef std::bitset<32> Window;
+                typedef uint32_t Window;
 				Window certain_misses;
 				Window potential_misses;
                 // max window size is 31
@@ -47,38 +47,38 @@ namespace NP {
 
                 void add_certain_miss() {
 					// if the bit that is shifted out was a hit and we add a miss, increment the number of misses in the window
-					if (certain_misses[window_size - 1] == 0)
+					if ((certain_misses & (1UL << (window_size - 1))) == 0)
 						num_certain_misses++;
 					certain_misses <<= 1;
-					certain_misses[0] = 1;
-					certain_misses[window_size] = 0; // ensure we only keep 'window_size' bits
+					certain_misses |= 1UL;
+					certain_misses &= ~(1UL << window_size); // ensure we only keep 'window_size' bits (erase the most significant bit)
 					add_potential_miss();
                 }
 
 				void add_potential_miss() {
 					// if the bit that is shifted out was a hit and we add a miss, increment the number of misses in the window
-					if (potential_misses[window_size - 1] == 0)
+					if ((potential_misses & (1UL << (window_size - 1))) == 0)
 						num_potential_misses++;
 					potential_misses <<= 1;
-					potential_misses[0] = 1;
-					potential_misses[window_size] = 0; // ensure we only keep 'window_size' bits
+					potential_misses |= 1UL;
+					potential_misses &= ~(1UL << window_size); // ensure we only keep 'window_size' bits (erase the most significant bit)
 				}
 
                 void add_certain_hit() {
 					// if the bit that is shifted out was a miss and we add a hit, decrement the number of misses in the window
-					if (certain_misses[window_size - 1] == 1)
+					if ((certain_misses & (1UL << (window_size - 1))))
 						num_certain_misses--;
                     certain_misses <<= 1;
-					certain_misses[window_size] = 0; // ensure we only keep 'window_size' bits
+					certain_misses &= ~(1UL << window_size); // ensure we only keep 'window_size' bits (erase the most significant bit)
 					add_potential_hit();
 				}
 
 				void add_potential_hit() {
 					// if the bit that is shifted out was a miss and we add a hit, decrement the number of misses in the window
-					if (potential_misses[window_size - 1] == 1)
+					if ((potential_misses & (1UL << (window_size - 1))))
 						num_potential_misses--;
 					potential_misses <<= 1;
-					potential_misses[window_size] = 0; // ensure we only keep 'window_size' bits
+					potential_misses &= ~(1UL << window_size); // ensure we only keep 'window_size' bits (erase the most significant bit)
 				}
 
                 unsigned int get_num_certain_misses() const {
@@ -95,34 +95,36 @@ namespace NP {
 					num_potential_misses = std::max(num_potential_misses, other.num_potential_misses);
 					auto and_p_misses = potential_misses & other.potential_misses;
 					auto xor_p_misses = potential_misses ^ other.potential_misses;
-					auto and_p_count = and_p_misses.count();
+					auto and_p_count = std::popcount(and_p_misses);
 					potential_misses = and_p_misses;
 					auto diff = num_potential_misses - and_p_count;
 					// for any position where there was a miss in one of the windows, but not both (identified by xor_misses),
-					for (int i = 0; i < window_size and diff > 0; i++) {
-						if (xor_p_misses[i] == 1) {
-							// a miss in one of the windows, but not both
-							// set the bit to 1 (miss) to be conservative
-							potential_misses.set(i);
-							diff--;
-						}
+					while (diff > 0) {
+						assert(xor_p_misses != 0); // we should have enough bits to set
+						auto i = std::countr_zero(xor_p_misses);
+						// a miss in one of the windows, but not both
+						// set the bit to 1 (miss) to be conservative
+						potential_misses |= (1UL << i);
+						xor_p_misses &= ~(1UL << i); // clear the bit so we don't pick it again
+						diff--;
 					}
 
 					// Merging by taking the best-case (minimum) number of certain misses in the sliding window
 					num_certain_misses = std::min(num_certain_misses, other.num_certain_misses);
 					auto and_c_misses = certain_misses & other.certain_misses;
 					auto xor_c_misses = certain_misses ^ other.certain_misses;
-					auto and_c_count = and_c_misses.count();
+					auto and_c_count = std::popcount(and_c_misses);
 					certain_misses = and_c_misses;
 					diff = num_certain_misses - and_c_count;
 					// for any position where there was a miss in one of the windows, but not both (identified by xor_misses),
-					for (int i = window_size - 1; i >= 0 and diff > 0; i--) {
-						if (xor_c_misses[i] == 1) {
-							// a miss in one of the windows, but not both
-							// set the bit to 1 (miss) to be conservative
-							certain_misses.set(i);
-							diff--;
-						}
+					while (diff > 0) {
+						assert(xor_c_misses != 0); // we should have enough bits to set
+						auto i = std::countl_zero(xor_c_misses);
+						// a miss in one of the windows, but not both
+						// set the bit to 1 (miss) to be conservative
+						certain_misses |= (1UL << (31 - i));
+						xor_c_misses &= ~(1UL << (31 - i)); // clear the bit so we don't pick it again
+						diff--;
 					}
 				}
             };
