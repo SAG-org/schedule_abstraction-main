@@ -1,0 +1,40 @@
+analysis_config:
+  time_model: discrete # must be one of {discrete, dense}.
+  stop_at_first_deadline_miss: true 
+  merge_strategy: l1 # must be one of {no, c1, c2, l1, l2, l3, lmax}. if not provided, defaults to l1
+  focused_exploration: true # if not provided, defaults to false
+  extensions: # currently not used 
+    activate_mk_analysis: true # if not provided, defaults to false
+    activate_task_chains: true # if not provided, defaults to false
+
+input:
+  jobs: ..\experiment2-taskset0.csv # input file.
+  precedence_constraints: ..\experiment2-taskset0.prec.csv # input file for precedence constraints. If not provided or empty or `none`, no precedence constraints are considered
+  exclusion_constraints: none # input file for exclusion constraints. If not provided or empty or `none`, no exclusion constraints are considered
+  abort_actions: none # input file for abort actions. If not provided or empty or `none`, no abort actions are considered
+  platform: none # input file for the platform description. If not provided or empty or `none`, a default single-core platform is considered
+  extensions:
+    mk_constraints: mkTasks.csv # input file for the mk analysis. Required if activate_mk_analysis is true, ignored otherwise
+    task_chains: taskChains.csv # input file for the task chains analysis. Required if activate_task_chains is true, ignored otherwise
+  focused_expl_config: focus.yaml # configuration file for the focused exploration. Required if focused_exploration is true, ignored otherwise
+
+output:
+  response_time: false # if not provided, defaults to false
+  graph_width: false # if not provided, defaults to false
+  miss_state_info: false # Reports information on the deadline miss state if a deadline miss occurs. if not provided, defaults to false
+  save_sag: # if not provided, capture of the SAG is set to false by default
+    activate: false 
+    config: logOptions.yaml # configuration file for the saved state-activity graph
+
+limits:
+  memory_usage: 512M # will automatically be transformed to kB (e.g., 512M = 512*1024 kB; 2.1G = 2.1*1024*1024 kB)). 0 and `none` mean no limit
+  runtime: 1d2h15m30s # will automatically be transformed to seconds (e.g., 2m30s = 150s; 1h = 3600s)`. 0 and `none` mean no limit
+  depth: 15 # `none` means no limit
+
+pretty_printing:
+  header: true # print column header in the output
+  verbose: true # print status of the analysis during the exploration
+
+parallel_exploration:
+  active: false # activate/deactivate parallel exploration
+  threads: 4 # limits the number of threads used for the exploration if the parallel exploration is activated, ignored otherwise
