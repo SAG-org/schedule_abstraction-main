@@ -38,8 +38,23 @@ namespace NP {
 			return stream;
 		}
 	};
+// Close NP temporarily so we can specialize std::hash for NP::JobID
+}
 
-	
+namespace std {
+	template<> struct hash<NP::JobID>
+	{
+		std::size_t operator()(NP::JobID const& id) const
+		{
+			std::hash<unsigned long> h;
+			return (h(id.job) << 16) ^ h(id.task);
+		}
+	};
+}
+
+// Re-open NP namespace to continue definitions
+namespace NP {
+
 	template<class Time> class Job {
 
 	public:
@@ -357,16 +372,6 @@ namespace std {
 		{
 			return j.get_key();
 		}
-	};
-
-	template<> struct hash<NP::JobID>
-	{
-		std::size_t operator()(NP::JobID const& id) const
-		{
-			hash<unsigned long> h;
-			return (h(id.job) << 4) ^ h(id.task);
-		}
-
 	};
 }
 
