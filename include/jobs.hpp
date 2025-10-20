@@ -45,7 +45,7 @@ namespace std {
 	{
 		std::size_t operator()(NP::JobID const& id) const
 		{
-			hash<unsigned long> h;
+			std::hash<unsigned long> h;
 			return (h(id.job) << 16) ^ h(id.task);
 		}
 	};

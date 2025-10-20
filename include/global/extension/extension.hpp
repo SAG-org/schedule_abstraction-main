@@ -18,7 +18,7 @@ namespace NP {
 			template<class... Args>
 			static void activate(State_space_data<Time>& state_space_data, Args&&... args) {
 				// Register the state space data extension
-				auto ext_id = state_space_data.get_extensions().register_extension<State_space_data_ext>(std::forward<Args>(args)...);
+				auto ext_id = state_space_data.get_extensions().template register_extension<State_space_data_ext>(std::forward<Args>(args)...);
 				
 				// Register the state extension type with the state extension registry
 				state_space_data.get_state_extension_registry().template register_extension<State_ext>(ext_id);

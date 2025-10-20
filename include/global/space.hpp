@@ -224,7 +224,7 @@ namespace NP {
 			template <typename Extension_type>
 			std::ostringstream get_results()
 			{
-				Extension_type* mk_data = state_space_data.get_extensions().get<Extension_type>();
+				Extension_type* mk_data = state_space_data.get_extensions().template get<Extension_type>();
 				if (mk_data == nullptr) {
 					std::cerr << "Error: analysis extension is not available." << std::endl;
 					return std::ostringstream();
@@ -236,7 +236,7 @@ namespace NP {
 			template <typename Extension_type, typename Result_type>
 			Result_type get_results() const
 			{
-				Extension_type* mk_data = state_space_data.get_extensions().get<Extension_type>();
+				Extension_type* mk_data = state_space_data.get_extensions().template get<Extension_type>();
 				if (mk_data == nullptr) {
 					std::cerr << "Error: analysis extension is not available." << std::endl;
 					return Result_type();
@@ -414,7 +414,7 @@ namespace NP {
 #endif
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				// check if the MK analysis extension is registered
-				auto mk_ext = problem_extensions.get<MK_analysis::MK_problem_extension>();
+				auto mk_ext = problem_extensions.template get<MK_analysis::MK_problem_extension>();
 				if (mk_ext)
 				{
 					// If yes, activate MK analysis

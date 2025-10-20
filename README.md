@@ -18,7 +18,7 @@ The uniprocessor analysis (Nasri & Brandenburg, 2017) is exact (at least in the 
 
 ## Dependencies
 
-- A modern C++ compiler supporting the **C++14 standard**. Recent versions `MSVC` on windows and of `clang` and `g++` on Linux and macOS are known to work. 
+- A modern C++ compiler supporting the **C++20 standard**. Recent versions `MSVC` on windows and of `clang` and `g++` on Linux and macOS are known to work. 
 
 - The [CMake](https://cmake.org) build system.
 
@@ -30,12 +30,14 @@ The uniprocessor analysis (Nasri & Brandenburg, 2017) is exact (at least in the 
 
 ## Build Instructions
 ### Windows
-For Windows, we recommend to load the project in Visual Studio and use cmake to build a solution. The easiest is to open a terminal (Tools > Command Line > Developper Command Prompt) and type the command 
+For Windows, we recommend to clone the git repository in Visual Studio (using the "Clone repository" option of VS) and use cmake to build a solution. The easiest is to open a terminal (Tools > Command Line > Developper Command Prompt) and type the command 
 ```bash
 cd build
 cmake ..
 ```
 You can then open the solution and build it in VS. 
+
+Using Visual Studio Code or equivalent works too.
 
 ### Linux and macOS
 The rest of the instructions assume a Linux or macOS host.
@@ -305,6 +307,11 @@ If invoked on an input file named `foo.csv`, the completion times will be stored
 Note that the analysis by default aborts after finding the first deadline miss, in which case some of the rows may report nonsensical default values.  To force the analysis to run to completion despite deadline misses, pass the `-c` flag to `nptest`.
 
 ## Additional options
+
+### Default config
+
+It is possible to define a default configuration for the analysis in a YAML file. The file can be sent to the SAG tool using the `--config` option. An example of a configuration file is available at: `examples/config.yaml`. 
+Any option sent via the **command line takes precedence over the options defined in the config file**.
 
 ### Merge aggressivity
 

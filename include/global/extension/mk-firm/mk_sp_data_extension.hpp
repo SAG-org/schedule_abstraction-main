@@ -1,6 +1,7 @@
 #ifndef MK_STATE_SPACE_DATA_EXTENSION_HPP
 #define MK_STATE_SPACE_DATA_EXTENSION_HPP
 
+#include "global/state_space_data.hpp"
 #include "global/extension/state_space_data_extension.hpp"
 #include "global/extension/mk-firm/mk_firm.hpp"
 #include "jobs.hpp"
@@ -36,7 +37,7 @@ namespace NP {
 					return misses_per_job;
 				}
 
-				std::ostringstream get_results(const typename State_space_data<Time>& sp_data) const override
+				std::ostringstream get_results(const State_space_data<Time>& sp_data) const override
 				{
 					auto ss = std::ostringstream();
 					ss << "Task ID, RespectMK, Min Misses, Max Misses" << std::endl;

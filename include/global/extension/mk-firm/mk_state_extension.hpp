@@ -23,7 +23,7 @@ namespace NP {
                     const unsigned int num_processors,
                     const State_space_data<Time>& state_space_data) override
                 {
-                    auto spd_ext = state_space_data.get_extensions().get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
+                    auto spd_ext = state_space_data.get_extensions().template get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
 					auto num_tasks = spd_ext->get_num_tasks();
                     for ( int i = 0; i < num_tasks; i++)
                         sliding_misses.emplace_back(spd_ext->get_mk_window_length(i));
@@ -35,7 +35,7 @@ namespace NP {
                     const std::vector<Interval<Time>>& proc_initial_state,
                     const State_space_data<Time>& state_space_data) override
                 {
-                    auto spd_ext = state_space_data.get_extensions().get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
+                    auto spd_ext = state_space_data.get_extensions().template get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
                     auto num_tasks = spd_ext->get_num_tasks();
                     for (int i = 0; i < num_tasks; i++)
                         sliding_misses.emplace_back(spd_ext->get_mk_window_length(i));
@@ -56,7 +56,7 @@ namespace NP {
                     Time next_source_job_rel,
                     unsigned int ncores = 1) override
                 {
-                    auto from_ext = from.get_extensions().get<MK_state_extension<Time>>(extension_id);
+                    auto from_ext = from.get_extensions().template get<MK_state_extension<Time>>(extension_id);
                     sliding_misses = from_ext->sliding_misses;
                     const auto& job = state_space_data.jobs[j];
                     auto task = job.get_task_id();
@@ -68,7 +68,7 @@ namespace NP {
                         sliding_misses[task].add_certain_hit();
 
                     const auto& extensions = state_space_data.get_extensions();
-                    auto spd_ext = extensions.get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
+                    auto spd_ext = extensions.template get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
 					spd_ext->submit_misses(j, sliding_misses[task].get_num_certain_misses(), sliding_misses[task].get_num_potential_misses());
                 }
 
@@ -114,7 +114,7 @@ namespace NP {
 
                 void merge(size_t extension_id, const Schedule_state<Time>& this_state, const Schedule_state<Time>& other) override
                 {
-                    auto other_ext = other.get_extensions().get<MK_state_extension<Time>>(extension_id);
+                    auto other_ext = other.get_extensions().template get<MK_state_extension<Time>>(extension_id);
                     assert(other_ext->sliding_misses.size() == sliding_misses.size());
                     for (size_t i = 0; i < sliding_misses.size(); i++) {
                         sliding_misses[i].merge(other_ext->sliding_misses[i]);

@@ -2,6 +2,7 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include "yaml-cpp/yaml.h"
 
 #include "mem.hpp"
 #include "OptionParser.h"
@@ -25,6 +26,7 @@ static bool merge_conservative;
 static bool merge_use_job_finish_times;
 static int merge_depth;
 static bool want_dense;
+static bool want_header;
 
 #ifdef CONFIG_PARALLEL
 static bool want_parallel = true;
@@ -38,7 +40,7 @@ static std::string focus_file;
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 static std::string mk_file;
-static bool want_mk;
+static bool want_mk = false;
 #endif
 
 static bool want_precedence = false;
@@ -70,6 +72,25 @@ static bool want_width_file;
 static bool want_deadline_miss_info;
 
 static bool continue_after_dl_miss = false;
+
+// store jobs file from config if provided
+static std::string config_jobs_file;
+
+static void print_header() {
+	std::cout << "# file name"
+		<< ", schedulable?(1Y/0N)"
+		<< ", #jobs"
+		<< ", #nodes"
+		<< ", #states"
+		<< ", #edges"
+		<< ", max width"
+		<< ", CPU time"
+		<< ", memory"
+		<< ", timeout"
+		<< ", mem_out"
+		<< ", #CPUs"
+		<< std::endl;
+}
 
 struct Analysis_result {
 	bool schedulable;
@@ -161,7 +182,7 @@ static Analysis_result analyze(
 		// Parse the task chain file
 		auto mk_constraints = NP::Global::MK_analysis::parse_mk_constraints_csv(mk_stream);
 		// Register the task chain analysis extension in the scheduling problem definition
-		problem.problem_extensions.register_extension<NP::Global::MK_analysis::MK_problem_extension>(mk_constraints);
+		problem.problem_extensions.template register_extension<NP::Global::MK_analysis::MK_problem_extension>(mk_constraints);
 	}
 #endif
 #ifdef CONFIG_PRUNING
@@ -183,6 +204,10 @@ static Analysis_result analyze(
 	if (not dot_file.empty()) {
 		auto dot_config_stream = std::ifstream();
 		dot_config_stream.open(dot_file);
+		if (!dot_config_stream) {
+			std::cerr << "Error: could not open log config YAML file: " << dot_file << std::endl;
+			exit(1);
+		}
 		log_opts.log_cond = NP::parse_log_config_yaml<Time>(dot_config_stream, jobs, log_print_config);
 	}
 	// Actually call the analysis engine
@@ -243,7 +268,7 @@ static Analysis_result analyze(
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 	auto mk_results = std::ostringstream();
 	if (want_mk) {
-		mk_results = space->get_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
+		mk_results = space->template get_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
 	}
 #endif
 
@@ -323,6 +348,10 @@ static void process_file(const std::string& fname)
 		
 		if (want_precedence) {
 			dag_stream.open(precedence_file);
+			if (!dag_stream) {
+				std::cerr << "Error: could not open precedence constraints file: " << precedence_file << std::endl;
+				exit(1);
+			}
 		} 
 		else if (in_is_yaml) {
 			// if precedence file is not given, but input file is in YAML, we assume that the precedence constraints are in the input file
@@ -333,6 +362,10 @@ static void process_file(const std::string& fname)
 
 		if (want_aborts) {
 			aborts_stream.open(aborts_file);
+			if (!aborts_stream) {
+				std::cerr << "Error: could not open aborts file: " << aborts_file << std::endl;
+				exit(1);
+			}
 			//check the extension of the file
 			std::string ext = aborts_file.substr(aborts_file.find_last_of(".") + 1);
 			if (ext == "yaml" || ext == "yml") {
@@ -344,6 +377,10 @@ static void process_file(const std::string& fname)
 
 		if (want_mutexes) {
 			excl_stream.open(excl_file);
+			if (!excl_stream) {
+				std::cerr << "Error: could not open mutex constraints file: " << excl_file << std::endl;
+				exit(1);
+			}
 			std::string ext = excl_file.substr(excl_file.find_last_of(".") + 1);
 			if (ext == "yaml" || ext == "yml") {
 				excl_is_yaml = true;
@@ -352,6 +389,10 @@ static void process_file(const std::string& fname)
 
 		if (platform_defined) {
 			platform_stream.open(platform_file);
+			if (!platform_stream) {
+				std::cerr << "Error: could not open platform specification file: " << platform_file << std::endl;
+				exit(1);
+			}
 			//check the extension of the file
 			std::string ext = platform_file.substr(platform_file.find_last_of(".") + 1);
 			if (ext == "yaml" || ext == "yml") {
@@ -431,6 +472,11 @@ static void process_file(const std::string& fname)
 			}
 		}
 
+		if (want_header) {
+			print_header();
+			want_header = false; // only print header once
+		}
+
 		Memory_monitor mem;
 		long mem_used = mem;
 
@@ -484,36 +530,297 @@ static void process_file(const std::string& fname)
 	}
 }
 
-static void print_header(){
-	std::cout << "# file name"
-	          << ", schedulable?(1Y/0N)"
-	          << ", #jobs"
-	          << ", #nodes"
-	          << ", #states"
-	          << ", #edges"
-	          << ", max width"
-	          << ", CPU time"
-	          << ", memory"
-	          << ", timeout"
-			  << ", mem_out"
-	          << ", #CPUs"
-	          << std::endl;
+// Helper function to parse time limit string (e.g., "1d2h15m30s" -> seconds)
+static long long parse_time_limit(const std::string& time_str) {
+	if (time_str.empty()) return 0;
+	
+	long long total_seconds = 0;
+	std::string num_str;
+	
+	for (char c : time_str) {
+		if (isdigit(c) || c == '.') {
+			num_str += c;
+		} else {
+			if (!num_str.empty()) {
+				double value = std::stod(num_str);
+				switch (c) {
+					case 'd': total_seconds += static_cast<long long>(value * 86400); break;
+					case 'h': total_seconds += static_cast<long long>(value * 3600); break;
+					case 'm': total_seconds += static_cast<long long>(value * 60); break;
+					case 's': total_seconds += static_cast<long long>(value); break;
+					default:
+						std::cerr << "Unknown time unit: " << c << std::endl;
+						return 0;
+				}
+				num_str.clear();
+			}
+		}
+	}
+	
+	// If there's a remaining number without unit, treat it as seconds
+	if (!num_str.empty()) {
+		total_seconds += static_cast<long long>(std::stod(num_str));
+	}
+	
+	return total_seconds;
+}
+
+// Helper function to parse memory limit string (e.g., "512M" -> KiB)
+static long parse_memory_limit(const std::string& mem_str) {
+	if (mem_str.empty()) return 0;
+	
+	std::string num_str;
+	char unit = 0;
+	
+	for (char c : mem_str) {
+		if (isdigit(c) || c == '.') {
+			num_str += c;
+		} else {
+			unit = c;
+			break;
+		}
+	}
+	
+	if (num_str.empty()) return 0;
+	
+	double value = std::stod(num_str);
+	
+	switch (unit) {
+		case 'K': case 'k': return static_cast<long>(value);
+		case 'M': case 'm': return static_cast<long>(value * 1024);
+		case 'G': case 'g': return static_cast<long>(value * 1024 * 1024);
+		default: return static_cast<long>(value); // assume KiB if no unit
+	}
+}
+
+// Function to parse config YAML file and set options
+static void parse_config_file(const std::string& config_file, optparse::Values& options) {
+    try {
+        YAML::Node config = YAML::LoadFile(config_file);
+
+        // Parse analysis_config section
+        if (config["analysis_config"]) {
+            auto analysis = config["analysis_config"];
+
+            // Time model
+            if (analysis["time_model"] && !options.is_set_by_user("time_model")) {
+                options["time_model"] = analysis["time_model"].as<std::string>();
+            }
+
+            // Stop at first deadline miss
+            if (analysis["stop_at_first_deadline_miss"] && !options.is_set_by_user("go_on_after_dl")) {
+                bool stop_at_first = analysis["stop_at_first_deadline_miss"].as<bool>();
+                options["go_on_after_dl"] = stop_at_first ? "0" : "1";
+            }
+
+            // Merge strategy
+            if (analysis["merge_strategy"] && !options.is_set_by_user("merge_opts")) {
+                options["merge_opts"] = analysis["merge_strategy"].as<std::string>();
+            }
+
+            // Focused exploration
+            if (analysis["focused_exploration"] && !options.is_set_by_user("focus_file")) {
+                bool want_focus_config = analysis["focused_exploration"].as<bool>();
+                if (want_focus_config && config["input"] && config["input"]["focused_expl_config"]) {
+                    options["focus_file"] = config["input"]["focused_expl_config"].as<std::string>();
+                }
+            }
+
+            // Extensions (prepare but don't set anything yet)
+            if (analysis["extensions"]) {
+                auto ext = analysis["extensions"];
+				if (config["input"] && config["input"]["extensions"]) {
+					// Future: mk_constraints, task_chains
+					auto ext_input = config["input"]["extensions"];
+					// Example of parsing for future analysis extensions
+					if (ext["activate_mk_analysis"]) {
+						bool want_mk = ext["activate_mk_analysis"].as<bool>();
+						if (want_mk ) {
+							if (ext_input["mk_constraints"])
+								options["mk_file"] = ext_input["mk_constraints"].as<std::string>();
+							else
+								std::cerr << "A mk constraint file must be specified if the mk analysis is activated.";
+						}
+					}
+					/*if (ext["activate_task_chains"]) {
+						bool want_tc = ext["activate_task_chains"].as<bool>();
+						if (want_tc && ext_input["task_chains"]) {
+							options["task_chains_file"] = ext_input["task_chains"].as<std::string>();
+						}
+					}*/
+				}
+			}
+		}
+
+        // Parse input section
+        if (config["input"]) {
+            auto input = config["input"];
+
+            // Jobs input
+            if (input["jobs"]) {
+                std::string jobs = input["jobs"].as<std::string>();
+                if (!jobs.empty() && jobs != "none") {
+                    config_jobs_file = jobs;
+                }
+            }
+
+            // Precedence constraints
+            if (input["precedence_constraints"] && !options.is_set_by_user("precedence_file")) {
+                std::string prec = input["precedence_constraints"].as<std::string>();
+                if (prec != "none" && !prec.empty()) {
+                    options["precedence_file"] = prec;
+                }
+            }
+
+            // Exclusion constraints
+            if (input["exclusion_constraints"] && !options.is_set_by_user("excl_file")) {
+                std::string excl = input["exclusion_constraints"].as<std::string>();
+                if (excl != "none" && !excl.empty()) {
+                    options["excl_file"] = excl;
+                }
+            }
+
+            // Abort actions
+            if (input["abort_actions"] && !options.is_set_by_user("abort_file")) {
+                std::string aborts = input["abort_actions"].as<std::string>();
+                if (aborts != "none" && !aborts.empty()) {
+                    options["abort_file"] = aborts;
+                }
+            }
+
+            // Platform
+            if (input["platform"] && !options.is_set_by_user("platform_file") && !options.is_set_by_user("num_processors")) {
+                std::string platform = input["platform"].as<std::string>();
+                if (platform != "none" && !platform.empty()) {
+                    options["platform_file"] = platform;
+                }
+            }
+		}
+
+        // Parse output section
+        if (config["output"]) {
+            auto output = config["output"];
+            
+            // Response time
+            if (output["response_time"] && !options.is_set_by_user("rta")) {
+                want_rta_file = output["response_time"].as<bool>();
+            }
+            
+            // Graph width
+            if (output["graph_width"] && !options.is_set_by_user("rta")) {
+                want_width_file = output["graph_width"].as<bool>();
+            }
+            
+            // Miss state info
+            if (output["miss_state_info"] && !options.is_set_by_user("miss_info")) {
+                bool want_miss_info = output["miss_state_info"].as<bool>();
+                options["miss_info"] = want_miss_info ? "1" : "0";
+            }
+            
+            // Save SAG
+            if (output["save_sag"]) {
+                auto sag = output["save_sag"];
+                if (sag["activate"] && !options.is_set_by_user("want_dot")) {
+                    bool want_graph = sag["activate"].as<bool>();
+                    options["want_dot"] = want_graph ? "1" : "0";
+                }
+                if (sag["config"] && !options.is_set_by_user("dot_file")) {
+					std::string dot_cfg = sag["config"].as<std::string>();
+					if (dot_cfg != "none" && !dot_cfg.empty()) {
+                        options["dot_file"] = dot_cfg;
+                    }
+                }
+            }
+        }
+        
+        // Parse limits section
+        if (config["limits"]) {
+            auto limits = config["limits"];
+            
+            // Memory usage
+            if (limits["memory_usage"] && !options.is_set_by_user("mem_max")) {
+                std::string mem_limit = limits["memory_usage"].as<std::string>();
+				if (mem_limit != "none") {
+					long mem_kib = parse_memory_limit(mem_limit);
+					options["mem_max"] = std::to_string(mem_kib);
+				}
+            }
+            
+            // Runtime
+            if (limits["runtime"] && !options.is_set_by_user("timeout")) {
+                std::string time_limit = limits["runtime"].as<std::string>();
+				if (time_limit != "none") {
+					long long time_sec = parse_time_limit(time_limit);
+					options["timeout"] = std::to_string(time_sec);
+				}
+            }
+            
+            // Depth
+            if (limits["depth"] && !options.is_set_by_user("depth")) {
+				std::string depth_limit = limits["depth"].as<std::string>();
+				if (depth_limit != "none") {
+					options["depth"] = depth_limit;
+				}
+            }
+        }
+        
+        // Parse pretty_printing section
+        if (config["pretty_printing"]) {
+            auto pp = config["pretty_printing"];
+            
+            // Header
+            if (pp["header"] && !options.is_set_by_user("print_header")) {
+                bool want_header = pp["header"].as<bool>();
+                options["print_header"] = want_header ? "1" : "0";
+            }
+            
+            // Verbose
+            if (pp["verbose"] && !options.is_set_by_user("verbose")) {
+                bool want_verbose = pp["verbose"].as<bool>();
+                options["verbose"] = want_verbose ? "1" : "0";
+            }
+        }
+        
+        // Parse parallel_exploration section
+        if (config["parallel_exploration"]) {
+            auto parallel = config["parallel_exploration"];
+            
+            // Active
+            if (parallel["active"] && !options.is_set_by_user("parallel")) {
+                bool want_parallel = parallel["active"].as<bool>();
+                options["parallel"] = want_parallel ? "1" : "0";
+            }
+            
+            // Threads
+            if (parallel["threads"] && !options.is_set_by_user("num_threads")) {
+                options["num_threads"] = parallel["threads"].as<std::string>();
+            }
+        }
+		
+    } catch (const YAML::Exception& e) {
+        std::cerr << "Error parsing config file " << config_file << ": " << e.what() << std::endl;
+        exit(1);
+    }
 }
 
 int main(int argc, char** argv)
 {
-	auto parser = optparse::OptionParser();
+    auto parser = optparse::OptionParser();
 
-	parser.description("Exact NP Schedulability Tester");
-	parser.usage("usage: %prog [OPTIONS]... [JOB SET FILES]...");
+    parser.description("Exact NP Schedulability Tester");
+    parser.usage("usage: %prog [OPTIONS]... [JOB SET FILES]...");
 
-	// add an option to show the version
-	parser.add_option("-v", "--version").dest("version")
-		.action("store_true").set_default("0")
-		.help("show program's version number and exit");
+    // add an option to show the version
+    parser.add_option("-v", "--version").dest("version")
+        .action("store_true").set_default("0")
+        .help("show program's version number and exit");
 
+    parser.add_option("--config").dest("config_file")
+        .metavar("CONFIG-FILE")
+        .help("path to YAML configuration file")
+        .set_default("");
 
-	parser.add_option("--merge").dest("merge_opts")
+    parser.add_option("--merge").dest("merge_opts")
 		.metavar("MERGE-LEVEL")
 		.choices({ "no", "c1", "c2", "l1", "l2", "l3", "lmax"}).choices({ "no", "c1", "c2","l1","l2","l3","lmax"}).set_default("l1")
 		.help("choose type of state merging approach used during the analysis. 'no': no merging, 'c1': conservative level 1, 'c2': conservative level 2, 'lx': lossy with depth=x, 'lmax': lossy with max depth. (default: l1)");
@@ -609,6 +916,15 @@ int main(int argc, char** argv)
 		.set_default("");
 
 	auto options = parser.parse_args(argc, argv);
+	
+	// Parse config file if provided (command line args take precedence)
+	if (options.is_set("config_file")) {
+		std::string config_file = (const std::string&)options.get("config_file");
+		if (!config_file.empty()) {
+			parse_config_file(config_file, options);
+		}
+	}
+	
 	//all the options that could have been entered above are processed below and appropriate variables
 	// are assigned their respective values.
 
@@ -655,7 +971,7 @@ int main(int argc, char** argv)
 		max_depth -= 1;
 	}
 
-	want_precedence = options.is_set_by_user("precedence_file");
+	want_precedence = options.is_set("precedence_file");
 	if (want_precedence && parser.args().size() > 1) {
 		std::cerr << "[!!] Warning: multiple job sets "
 		          << "with a single precedence DAG specified."
@@ -663,7 +979,7 @@ int main(int argc, char** argv)
 	}
 	precedence_file = (const std::string&) options.get("precedence_file");
 
-	want_aborts = options.is_set_by_user("abort_file");
+	want_aborts = options.is_set("abort_file");
 	if (want_aborts && parser.args().size() > 1) {
 		std::cerr << "[!!] Warning: multiple job sets "
 		          << "with a single abort action list specified."
@@ -671,7 +987,7 @@ int main(int argc, char** argv)
 	}
 	aborts_file = (const std::string&) options.get("abort_file");
 
-	want_mutexes = options.is_set_by_user("excl_file");
+	want_mutexes = options.is_set("excl_file");
 	if (want_mutexes && parser.args().size() > 1) {
 		std::cerr << "[!!] Warning: multiple job sets "
 		          << "with a single exclusion constraints file specified." 
@@ -681,15 +997,24 @@ int main(int argc, char** argv)
 		std::cout << "[**] Note: support for mutex constraints is only experimental for now." << std::endl;
 	excl_file = (const std::string&) options.get("excl_file");
 
-	want_mk = options.is_set_by_user("mk_file");
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+	want_mk = options.is_set("mk_file");
 	if (want_mk && parser.args().size() > 1) {
 		std::cerr << "[!!] Warning: multiple job sets "
 		          << "with a single mk-firm specifications file specified."
 		          << std::endl;
 	}
 	mk_file = (const std::string&) options.get("mk_file");
+#else
+	if (options.is_set("mk_file")) {
+		std::cerr << "Error: mk-firm analysis support must be enabled "
+		          << "during compilation (ANALYSIS_EXTENSIONS must be set)."
+		          << std::endl;
+		return 2;
+	}
+#endif
 
-	platform_defined = options.is_set_by_user("platform_file");
+	platform_defined = options.is_set("platform_file");
 	if (platform_defined) {
 		want_multiprocessor = true;
 		platform_file = (const std::string&) options.get("platform_file");
@@ -697,13 +1022,13 @@ int main(int argc, char** argv)
 			std::cerr << "Error: platform file not specified" << std::endl;
 			return 1;
 		}
-		if (options.is_set_by_user("num_processors")) {
+		if (options.get("num_processors")) {
 			std::cerr << "Error: options --platform and -m are exclusive." << std::endl;
 			return 1; // num_processors is set by platform file, not by user
 		}
 	}
 	else {
-		want_multiprocessor = options.is_set_by_user("num_processors");
+		want_multiprocessor = options.get("num_processors");
 		num_processors = options.get("num_processors");
 		if (!num_processors || num_processors > MAX_PROCESSORS) {
 			std::cerr << "Error: invalid number of processors\n" << std::endl;
@@ -720,15 +1045,15 @@ int main(int argc, char** argv)
 	continue_after_dl_miss = options.get("go_on_after_dl");
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	want_dot_graph = options.is_set_by_user("want_dot");
+	want_dot_graph = options.get("want_dot");
 	if (want_dot_graph)
 		dot_file = (const std::string&)options.get("dot_file");
-	else if (options.is_set_by_user("dot_file")) {
+	else if (options.get("dot_file")) {
 		std::cerr << "Warning: log options are set but log of state graph is not activated ('-g' or '--save-graph' not set). "
 			<< "The content of the file passed in argument with '--log_opts' will be ignored." << std::endl;
 	}
 #else
-	if (options.is_set_by_user("want_dot")) {
+	if (options.get("want_dot")) {
 		std::cerr << "Error: graph collection support must be enabled "
 			<< "during compilation (CONFIG_COLLECT_SCHEDULE_GRAPH "
 			<< "is not set)." << std::endl;
@@ -747,12 +1072,20 @@ int main(int argc, char** argv)
 		want_parallel = false;
 	}
 #endif
+#else
+	if (options.get("parallel") || options.is_set_by_user("num_threads")) {
+		std::cerr << "Error: parallel execution support must be enabled "
+				  << "during compilation (CONFIG_PARALLEL is not set)."
+				  << std::endl;
+		return 2;
+	}
 #endif
 #ifdef CONFIG_PRUNING
-	want_focus = options.is_set_by_user("focus_file");
+	want_focus = options.get("focus_file");
 	focus_file = (const std::string&)options.get("focus_file");
 #else
-	if(options.is_set_by_user("focus_file"))
+	auto focus_file = (const std::string&)options.get("focus_file");
+	if(!focus_file.empty())
 	{
 		std::cerr << "Error: Focused exploration support must be enabled "
 				  << "during compilation (CONFIG_PRUNING is not set)."
@@ -762,15 +1095,17 @@ int main(int argc, char** argv)
 #endif
 
 	// this prints the header in the output on the console
-	if (options.get("print_header"))
-		print_header();
+	want_header = options.get("print_header");
 
 	// process_file is given the arguments that have been passed
-	for (auto f : parser.args())
-		process_file(f);
-
-	if (parser.args().empty())
-		process_file("-");
+    if (!parser.args().empty()) {
+        for (auto f : parser.args())
+            process_file(f);
+    } else if (!config_jobs_file.empty()) {
+        process_file(config_jobs_file);
+    } else {
+        process_file("-");
+    }
 
 	return 0;
 }
