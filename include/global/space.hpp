@@ -29,6 +29,7 @@
 #include "clock.hpp"
 #include "mem.hpp"
 
+#include "global/node.hpp"
 #include "global/state.hpp"
 #include "object_pool.hpp"
 

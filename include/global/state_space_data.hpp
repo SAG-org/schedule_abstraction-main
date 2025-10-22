@@ -13,6 +13,7 @@
 #include <ostream>
 
 #include "problem.hpp"
+#include "global/node.hpp"
 #include "global/state.hpp"
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
