@@ -24,6 +24,7 @@ namespace NP {
 		typedef std::vector<Job_index> Job_precedence_set;
 
 		template<class Time> class State_space_data;
+		template<class Time> class Schedule_state;
 
 		template<class Time> class Schedule_node
 		{
@@ -68,7 +69,7 @@ namespace NP {
 			{
 				bool operator() (State_ref x, State_ref y) const
 				{
-					return x->earliest_finish_time() < y->earliest_finish_time();
+					return x->earliest_core_availability() < y->earliest_core_availability();
 				}
 			};
 
