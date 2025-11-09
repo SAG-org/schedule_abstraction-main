@@ -13,6 +13,8 @@
 
 #include "global/state.hpp"
 #include "global/state_space_data.hpp"
+#include "global/ready_jobs_tracker.hpp"
+#include "global/pending_successors_tracker.hpp"
 #include "jobs.hpp"
 #include "util.hpp"
 
@@ -29,15 +31,11 @@ namespace NP {
 		template<class Time> class Schedule_node
 		{
 		private:
-			typedef typename State_space_data<Time>::Workload Workload;
+			using Workload = typename State_space_data<Time>::Workload;
 			typedef Schedule_state<Time> State;
 			typedef std::shared_ptr<State> State_ref;
-			typedef typename std::vector<Interval<Time>> Core_availability;
-			typedef typename State_space_data<Time>::Delay_list Delay_list;
-			typedef std::vector<Delay_list> Successors;
-			typedef std::vector<Delay_list> Predecessors;
-			typedef typename State_space_data<Time>::Inter_job_constraints Inter_job_constraints;
-			typedef std::vector<Inter_job_constraints> Constraints;
+			typedef std::vector<Interval<Time>> Core_availability;
+			using Inter_job_constraints = typename State_space_data<Time>::Inter_job_constraints;
 
 			Time earliest_pending_release;
 			Time next_certain_successor_jobs_dispatch;
@@ -47,9 +45,9 @@ namespace NP {
 
 			Job_set scheduled_jobs;
 			// set of jobs that have all their predecessors completed and were not dispatched yet
-			std::vector<const Job<Time>*> ready_successor_jobs;
-			std::vector<Job_index> jobs_with_pending_start_succ;
-			std::vector<Job_index> jobs_with_pending_finish_succ;
+			Ready_jobs_tracker<Time> ready_successor_jobs;
+			// set of jobs that have at least one unscheduled successor with a start-to-start or finish-to-start constraint
+			Pending_successors_tracker<Time> jobs_with_pending_successors;
 
 			hash_value_t lookup_key;
 			Interval<Time> finish_time;
@@ -153,8 +151,8 @@ namespace NP {
 				, next_certain_sequential_source_job_release{ next_certain_sequential_source_job_release }
 				, next_certain_gang_source_job_dispatch{ Time_model::constants<Time>::infinity() }
 			{
-				update_ready_successors(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
-				update_jobs_with_pending_succ(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
+				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
+				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
@@ -178,8 +176,8 @@ namespace NP {
 
 				scheduled_jobs.clear();
 				num_jobs_scheduled = 0;
-				jobs_with_pending_start_succ.clear();
-				jobs_with_pending_finish_succ.clear();
+				ready_successor_jobs.clear();
+				jobs_with_pending_successors.clear();
 				earliest_pending_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
@@ -200,8 +198,8 @@ namespace NP {
 				a_max = 0;
 				scheduled_jobs.clear();
 				num_jobs_scheduled = 0;
-				jobs_with_pending_start_succ.clear();
-				jobs_with_pending_finish_succ.clear();
+				ready_successor_jobs.clear();
+				jobs_with_pending_successors.clear();
 				earliest_pending_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
@@ -234,12 +232,9 @@ namespace NP {
 				this->next_certain_source_job_release = next_certain_source_job_release;
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
 				this->next_certain_sequential_source_job_release = next_certain_sequential_source_job_release;
-				ready_successor_jobs.clear();
-				jobs_with_pending_start_succ.clear();
-				jobs_with_pending_finish_succ.clear();
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
-				update_ready_successors(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
-				update_jobs_with_pending_succ(from, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
+				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
+				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
 			const unsigned int number_of_scheduled_jobs() const
@@ -271,17 +266,17 @@ namespace NP {
 
 			const std::vector<const Job<Time>*>& get_ready_successor_jobs() const
 			{
-				return ready_successor_jobs;
+				return ready_successor_jobs.get_ready_successors();
 			}
 
 			const std::vector<Job_index>& get_jobs_with_pending_start_successors() const
 			{
-				return jobs_with_pending_start_succ;
+				return jobs_with_pending_successors.get_jobs_with_pending_start_successors();
 			}
 
 			const std::vector<Job_index>& get_jobs_with_pending_finish_successors() const
 			{
-				return jobs_with_pending_finish_succ;
+				return jobs_with_pending_successors.get_jobs_with_pending_finish_successors();
 			}
 
 			hash_value_t get_key() const
@@ -361,11 +356,13 @@ namespace NP {
 					<< "Ready successors: [[<task_id>,<job_id>], ...]\n"
 					<< "[";
                 // Ready successor jobs: [<task_id>,<job_id>]
-				int i = 0;
-                for (const auto* job : ready_successor_jobs) {
+				unsigned int i = 0;
+				const auto& ready_successors = ready_successor_jobs.get_ready_successors();
+				const auto num_ready_succ = ready_successors.size();
+                for (const auto* job : ready_successors) {
                     stream << "[" << job->get_task_id() << "," << job->get_job_id() << "]";
 					++i;
-					if (i < ready_successor_jobs.size()) 
+					if (i < num_ready_succ) 
 						stream << ",";
                 }
 				stream << "]\n"
@@ -508,160 +505,6 @@ namespace NP {
 					next_certain_successor_jobs_dispatch = std::max(next_certain_successor_jobs_dispatch, s->next_certain_successor_jobs_dispatch());
 					next_certain_gang_source_job_dispatch = std::max(next_certain_gang_source_job_dispatch, s->next_certain_gang_source_job_dispatch());
 				}
-			}
-
-			// update the list of jobs that have all their predecessors completed and were not dispatched yet
-			// Assume: successors_of[j] is sorted in non-increasing priority order
-			void update_ready_successors(const Schedule_node& from,
-				Job_index j, const Constraints& constraints,
-				const Job_set& scheduled_jobs)
-			{
-				ready_successor_jobs.reserve(from.ready_successor_jobs.size() + constraints[j].start_to_successors_start.size() +
-						constraints[j].finish_to_successors_start.size());
-
-				// update the list of ready successor jobs by keeping it sorted in non-increasing priority order
-				auto it_old = from.ready_successor_jobs.begin();
-				auto it_old_end = from.ready_successor_jobs.end();
-				while (it_old != it_old_end && (*it_old)->get_job_index() == j)
-					++it_old; // skip if it is the job we just dispatched
-
-				auto it_start_succ = constraints[j].start_to_successors_start.begin();
-				auto it_start_succ_end = constraints[j].start_to_successors_start.end();
-
-				auto it_finish_succ = constraints[j].finish_to_successors_start.begin();
-				auto it_finish_succ_end = constraints[j].finish_to_successors_start.end();
-
-				auto get_next_ready_job = [&](auto& it, const auto it_end) {
-					while (it != it_end)
-					{
-						if (is_ready(it->reference_job->get_job_index(), constraints[it->reference_job->get_job_index()]))
-							break;
-						++it;
-					}
-				};
-
-				get_next_ready_job(it_start_succ, it_start_succ_end);
-				get_next_ready_job(it_finish_succ, it_finish_succ_end);
-
-				// merge the three sorted lists of ready jobs
-				while (it_old != it_old_end || it_start_succ != it_start_succ_end || it_finish_succ != it_finish_succ_end)
-				{
-					const Job<Time>* next_job = nullptr;
-					unsigned int next_source = 0; // 0 = old, 1 = start_succ, 2 = finish_succ
-					if (it_old != it_old_end) {
-						next_job = *it_old;
-					}
-					if (it_start_succ != it_start_succ_end) {
-						if (next_job == nullptr || it_start_succ->reference_job->higher_priority_than(*next_job)) {
-							next_source = 1;
-							next_job = it_start_succ->reference_job;
-						}
-					}
-					if (it_finish_succ != it_finish_succ_end) {
-						if (next_job == nullptr || it_finish_succ->reference_job->higher_priority_than(*next_job)) {
-							next_source = 2;
-							next_job = it_finish_succ->reference_job;
-						}
-					}
-
-					ready_successor_jobs.push_back(next_job);
-					switch (next_source)
-					{
-						case 0: // old
-							++it_old;
-							while (it_old != it_old_end && (*it_old)->get_job_index() == j)
-								++it_old; // skip if it is the job we just dispatched
-							break;
-						case 1: // start_succ
-							++it_start_succ;
-							get_next_ready_job(it_start_succ, it_start_succ_end);
-							break;
-						case 2: // finish_succ
-							++it_finish_succ;
-							get_next_ready_job(it_finish_succ, it_finish_succ_end);
-					}
-				}				
-			}
-
-			// update the list of jobs with non-dispatched successors 
-			void update_jobs_with_pending_succ(const Schedule_node& from,
-				Job_index j, const std::vector<Inter_job_constraints>& constraints,
-				const Job_set& scheduled_jobs)
-			{
-				jobs_with_pending_start_succ.reserve(from.jobs_with_pending_start_succ.size() + 1);
-				jobs_with_pending_finish_succ.reserve(from.jobs_with_pending_finish_succ.size() + 1);
-
-				// we only need to add j to jobs_with_pending_start_succ if it has successors with start to start constraints
-				bool added_j = constraints[j].start_to_successors_start.empty();
-				if (added_j) {
-					for (const auto& excl : constraints[j].between_starts) {
-						// if it has started then we account for the constraint
-						if (!scheduled_jobs.contains(excl.reference_job->get_job_index()))
-						{
-							added_j = false;
-							break;
-						}
-					}
-				}
-				for (Job_index job : from.jobs_with_pending_start_succ)
-				{
-					if (!added_j && job > j)
-					{
-						jobs_with_pending_start_succ.push_back(j);
-						added_j = true;
-					}
-
-					bool successor_pending = false;
-					for (const auto& succ : constraints[job].start_to_successors_start) {
-						auto to_job = succ.reference_job->get_job_index();
-						if (!scheduled_jobs.contains(to_job))
-						{
-							successor_pending = true;
-							break;
-						}
-					}
-					if (successor_pending)
-						jobs_with_pending_start_succ.push_back(job);
-				}
-
-				if (!added_j)
-					jobs_with_pending_start_succ.push_back(j);
-
-				// we only need to add j to jobs_with_pending_finish_succ if it has successors with start to start constraints
-				added_j = constraints[j].finish_to_successors_start.empty();
-				if (added_j) {
-					for (const auto& excl : constraints[j].between_executions) {
-						// if it has started then we account for the constraint
-						if (!scheduled_jobs.contains(excl.reference_job->get_job_index()))
-						{
-							added_j = false;
-							break;
-						}
-					}
-				}
-				for (Job_index job : from.jobs_with_pending_finish_succ)
-				{
-					if (!added_j && job > j)
-					{
-						jobs_with_pending_finish_succ.push_back(j);
-						added_j = true;
-					}
-
-					bool successor_pending = false;
-					for (const auto& succ : constraints[job].finish_to_successors_start) {
-						auto to_job = succ.reference_job->get_job_index();
-						if (!scheduled_jobs.contains(to_job))
-						{
-							successor_pending = true;
-							break;
-						}
-					}
-					if (successor_pending)
-						jobs_with_pending_finish_succ.push_back(job);
-				}
-
-				if (!added_j)
-					jobs_with_pending_finish_succ.push_back(j);
 			}
 		};
 
