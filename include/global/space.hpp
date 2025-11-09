@@ -32,7 +32,8 @@
 #include "global/node.hpp"
 #include "global/state.hpp"
 #include "object_pool.hpp"
-
+#include "global/exploration_statistics.hpp"
+#include "global/resource_monitor.hpp"
 #include "logger.hpp"
 
 #ifdef CONFIG_PRUNING
@@ -52,10 +53,10 @@ namespace NP {
 		public:
 
 			typedef Scheduling_problem<Time> Problem;
-			typedef typename Scheduling_problem<Time>::Workload Workload;
-			typedef typename Scheduling_problem<Time>::Precedence_constraints Precedence_constraints;
-			typedef typename Scheduling_problem<Time>::Mutex_constraints Mutex_constraints;
-			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
+			using Workload = typename Scheduling_problem<Time>::Workload;
+			using Precedence_constraints = typename Scheduling_problem<Time>::Precedence_constraints;
+			using Mutex_constraints = typename Scheduling_problem<Time>::Mutex_constraints;
+			using Abort_actions = typename Scheduling_problem<Time>::Abort_actions;
 			typedef typename std::vector<Interval<Time>> CoreAvailability;
 
 			typedef Schedule_node<Time> Node;
@@ -85,9 +86,9 @@ namespace NP {
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
-				s->cpu_time.start();
+				s->resource_monitor.start_timing();
 				s->explore();
-				s->cpu_time.stop();
+				s->resource_monitor.stop_timing();
 				return s;
 			}
 #endif
@@ -115,9 +116,9 @@ namespace NP {
 				s->be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
-				s->cpu_time.start();
+				s->resource_monitor.start_timing();
 				s->explore();
-				s->cpu_time.stop();
+				s->resource_monitor.stop_timing();
 				return s;
 			}
 
@@ -192,32 +193,32 @@ namespace NP {
 			//currently unused, only required to compile nptest.cpp correctly
 			unsigned long number_of_nodes() const
 			{
-				return num_nodes;
+				return statistics.get_num_nodes();
 			}
 
 			unsigned long number_of_states() const
 			{
-				return num_states;
+				return statistics.get_num_states();
 			}
 
 			unsigned long number_of_edges() const
 			{
-				return num_edges;
+				return statistics.get_num_edges();
 			}
 
 			unsigned long max_exploration_front_width() const
 			{
-				return max_width;
+				return statistics.get_max_width();
 			}
 
 			const std::vector<std::pair<unsigned long, unsigned long>>& evolution_exploration_front_width() const
 			{
-				return width;
+				return statistics.get_width_evolution();
 			}
 
 			double get_cpu_time() const
 			{
-				return cpu_time;
+				return resource_monitor.get_cpu_time();
 			}
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
@@ -307,27 +308,22 @@ namespace NP {
 			Object_pool<Node> node_pool;
 			Object_pool<State> state_pool;
 
+			// Resource monitoring and statistics
+			Exploration_statistics statistics;
+			Resource_monitor resource_monitor;
+
 #ifdef CONFIG_PARALLEL
-			// Thread-safe statistics and control
-			std::atomic<unsigned long> num_nodes, num_states, num_edges;
 			mutable std::vector<std::unique_ptr<std::mutex>> rta_mutexes;
 			bool parallel_enabled;
 			unsigned int num_threads;
 			
 			// TBB task arena for thread control 
 			std::unique_ptr<tbb::task_arena> task_arena_;
-#else
-			unsigned long num_nodes, num_states, num_edges;
 #endif
 
 			// updated only by main thread - no protection needed
-			unsigned long long current_job_count, max_width;
-			std::vector<std::pair<unsigned long, unsigned long>> width;
-
-			Processor_clock cpu_time;
-			Memory_monitor mem_consumption;
-			const double timeout;
-			const long max_mem; // in kiB
+			unsigned long long current_job_count;
+			
 			const unsigned int num_cpus;
 			const std::vector<Interval<Time>> cores_initial_state;
 
@@ -365,21 +361,15 @@ namespace NP {
 				, deadline_miss_state(nullptr)
 				, deadline_miss_node(nullptr)
 				, be_naive(false)		
-				, timeout(max_cpu_time)
-				, mem_out(false)
-				, max_mem(max_memory)
 				, max_depth(max_depth)
 				, merge_opts(merge_options)
 				, verbose(verbose)
+				, statistics(jobs.size())
+				, resource_monitor(max_cpu_time, max_memory, max_depth)
 #ifdef CONFIG_PARALLEL
 				, parallel_enabled(parallel_enabled)
 				, num_threads(num_threads)
 #endif
-				, num_nodes(0)
-				, num_states(0)
-				, num_edges(0)
-				, max_width(0)
-				, width(jobs.size(), { 0,0 })
 				, rta(jobs.size())
 #ifdef CONFIG_PARALLEL
 				, rta_mutexes(jobs.size())
@@ -436,70 +426,6 @@ namespace NP {
 			Secateur<Time> secateur; // pruning tool
 #endif
 
-#ifdef CONFIG_PARALLEL
-			// Thread-safe helper methods
-			void count_edge_safe()
-			{
-				if (parallel_enabled) {
-					num_edges.fetch_add(1, std::memory_order_relaxed);
-				} else {
-					num_edges++;
-				}
-			}
-			
-			void increment_nodes_safe()
-			{
-				if (parallel_enabled) {
-					num_nodes.fetch_add(1, std::memory_order_relaxed);
-				} else {
-					num_nodes++;
-				}
-			}
-			
-			void increment_states_safe()
-			{
-				if (parallel_enabled) {
-					num_states.fetch_add(1, std::memory_order_relaxed);
-				} else {
-					num_states++;
-				}
-			}
-			
-			void decrement_states_safe(int count)
-			{
-				if (parallel_enabled) {
-					num_states.fetch_sub(count, std::memory_order_relaxed);
-				} else {
-					num_states -= count;
-				}
-			}
-#else
-			void count_edge_safe()
-			{
-				num_edges++;
-			}
-			
-			void increment_nodes_safe()
-			{
-				num_nodes++;
-			}
-			
-			void increment_states_safe()
-			{
-				num_states++;
-			}
-			
-			void decrement_states_safe(int count)
-			{
-				num_states -= count;
-			}
-#endif
-
-			void count_edge()
-			{
-				count_edge_safe();
-			}
-
 			void update_finish_times(Response_times& r, const Job_index id,
 				Interval<Time> range)
 			{
@@ -545,7 +471,7 @@ namespace NP {
 				Node_ref n = new_node(0, cores_initial_state, state_space_data);
 				State_ref s = new_state(cores_initial_state, state_space_data);
 				n->add_state(s);
-				increment_states_safe();
+				statistics.count_state();
 			}
 
 			Nodes& nodes(const int depth = 0)
@@ -589,18 +515,18 @@ namespace NP {
 					int n_states_merged = n.merge_states(*new_s, merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
 					if (n_states_merged > 0) {
 						release_state(new_s); // if we could merge no need to keep track of the new state anymore
-						decrement_states_safe(n_states_merged - 1);
+						statistics.remove_states(n_states_merged - 1);
 					}
 					else
 					{
 						n.add_state(new_s); // else add the new state to the node
-						increment_states_safe();
+						statistics.count_state();
 					}
 				}
 				else
 				{
 					n.add_state(new_s); // else add the new state to the node
-					increment_states_safe();
+					statistics.count_state();
 
 				}
 			}
@@ -634,13 +560,13 @@ namespace NP {
 				DM("new node - global " << n << std::endl);
 				// add node to nodes_by_key map.
 				cache_node(n);
-				num_nodes++;
+				statistics.count_node();
 				return n;
 			}
 
 			void check_cpu_timeout()
 			{
-				if (timeout && get_cpu_time() > timeout) {
+				if (resource_monitor.check_timeout()) {
 					aborted = true;
 					timed_out = true;
 				}
@@ -648,8 +574,8 @@ namespace NP {
 
 			long check_memory_abort()
 			{
-				long mem = mem_consumption;
-				if (max_mem && mem > max_mem) {
+				long mem = resource_monitor.get_memory_usage();
+				if (resource_monitor.check_out_of_memory()) {
 					aborted = true;
 					mem_out = true;
 				}
@@ -658,7 +584,7 @@ namespace NP {
 
 			void check_depth_abort()
 			{
-				if (max_depth && current_job_count > max_depth)
+				if (resource_monitor.check_depth(current_job_count))
 					aborted = true;
 			}
 
@@ -700,12 +626,12 @@ namespace NP {
 										new_n.get_ready_successor_jobs(), state_space_data, new_n.get_next_certain_source_job_release(), pmin
 								);
 								next->add_state(next_s);
-								increment_states_safe();
+								statistics.count_state();
 								deadline_miss_state = next_s;
 								deadline_miss_node = next;
 								// update response times
 								update_finish_times(j, frange);
-								count_edge();
+								statistics.count_edge();
 							}
 							break;
 						}
@@ -888,23 +814,21 @@ namespace NP {
 #endif
 
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
-						// only do that if we stop the analysis when a deadline miss is found 
-						if (be_naive && early_exit) {
-							check_for_deadline_misses(*n, *next);
-						}
+					// only do that if we stop the analysis when a deadline miss is found 
+					if (be_naive && early_exit) {
+						check_for_deadline_misses(*n, *next);
+					}
 
-						count_edge();
+					statistics.count_edge();
 
-						if (observed_deadline_miss) {
+					if (observed_deadline_miss) {
 #ifndef CONFIG_PARALLEL
-							deadline_miss_node = next;
+						deadline_miss_node = next;
 #endif
-							return dispatched_one;
-						}
+						return dispatched_one;
 					}
 				}
-
-				// if we stop the analysis when a deadline miss is found, then check whether a job will certainly miss 
+			}				// if we stop the analysis when a deadline miss is found, then check whether a job will certainly miss 
 				// its deadline because of when the processors become free next.
 				// if we are not using the naive exploration, we check for deadline misses only once per job dispatched
 				if (early_exit && !be_naive && next != nullptr)
@@ -1026,7 +950,7 @@ namespace NP {
 					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
 				}
 				
-				int last_num_states = num_states;
+				unsigned long last_num_states = statistics.get_num_states();
 				make_initial_node();
 
 				while (current_job_count < state_space_data.num_jobs()) {
@@ -1043,9 +967,8 @@ namespace NP {
 					}
 
 					// keep track of exploration front width (main thread only - no protection needed)
-					max_width = std::max(max_width, n);
-					int current_states = num_states;
-					width[current_job_count] = { n, current_states - last_num_states };
+					unsigned long current_states = statistics.get_num_states();
+					statistics.record_width(current_job_count, n, current_states - last_num_states);
 					last_num_states = current_states;
 
 					long long time = get_cpu_time();
@@ -1139,9 +1062,9 @@ namespace NP {
 				}
 				if (verbose) {
 #if __APPLE__
-					std::cout << "\r100%; " << get_cpu_time() << "s; " << mem_consumption / 1024 << "KiB" << std::endl << "Terminating" << std::endl;
+					std::cout << "\r100%; " << get_cpu_time() << "s; " << resource_monitor.get_memory_usage() / 1024 << "KiB" << std::endl << "Terminating" << std::endl;
 #else
-					std::cout << "\r100%; " << get_cpu_time() << "s; " << mem_consumption / 1024 << "MiB" << std::endl << "Terminating" << std::endl;
+					std::cout << "\r100%; " << get_cpu_time() << "s; " << resource_monitor.get_memory_usage() / 1024 << "MiB" << std::endl << "Terminating" << std::endl;
 #endif
 				}
 				// clean out any remaining nodes
