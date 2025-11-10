@@ -175,14 +175,27 @@ namespace NP {
 		}
 	};
 
-	// Common options to pass to the analysis engines
+	/**
+	 * @brief Configuration options for state merging during exploration
+	 */
+	struct Merge_options {
+		bool conservative;        ///< Conservative merge: only merge if one state contains another
+		bool use_finish_times;    ///< Consider job finish times when merging states
+		int budget;               ///< Maximum number of states to merge with (-1 = unlimited)
+	};
+	
+	/**
+	 * @brief Analysis configuration options
+	 * 
+	 * Consolidates all exploration and analysis parameters
+	 */
 	struct Analysis_options {
 		// After how many seconds of CPU time should we give up?
 		// Zero means unlimited.
 		double timeout;
 		// Max allowed memory usage
 		// Zero means unlimited.
-		long max_memory_usage = 0; // in KiB
+		long max_memory = 0; // in KiB
 
 		// After how many scheduling decisions (i.e., depth of the
 		// schedule graph) should we terminate the analysis?
@@ -199,9 +212,7 @@ namespace NP {
 		bool be_naive;
 
 		// If we use state merging, defines options to use
-		bool merge_conservative;
-		bool merge_use_job_finish_times;
-		int merge_depth;
+		Merge_options merge_opts;
 
 		// Should we write where we are in the analysis?
 		bool verbose;
@@ -224,9 +235,7 @@ namespace NP {
 		, max_depth(0)
 		, early_exit(true)
 		, be_naive(false)
-		, merge_conservative(false)
-		, merge_use_job_finish_times(false)
-		, merge_depth(1)
+		, merge_opts{false, false, 1}
 		, verbose(false)
 #ifdef CONFIG_PARALLEL
 		, parallel_enabled(true)
@@ -237,8 +246,7 @@ namespace NP {
 		, pruning_active(false)
 		, pruning_cond()
 #endif
-		{
-		}
+		{}
 	};
 }
 

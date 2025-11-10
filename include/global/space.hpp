@@ -34,6 +34,7 @@
 #include "object_pool.hpp"
 #include "global/exploration_statistics.hpp"
 #include "global/resource_monitor.hpp"
+#include "global/states_manager.hpp"
 #include "logger.hpp"
 
 #ifdef CONFIG_PRUNING
@@ -73,17 +74,17 @@ namespace NP {
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				Merge_options merge_opts{opts.merge_opts.conservative, opts.merge_opts.use_finish_times, opts.merge_opts.budget};
 				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 					prob.problem_extensions,
 #endif
-					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose, log_opts
+					merge_opts, opts.timeout, opts.max_memory, opts.max_depth, opts.early_exit, opts.verbose, log_opts
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
 				));
-				s->be_naive = opts.be_naive;
+				s->config.be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
 				s->resource_monitor.start_timing();
@@ -99,12 +100,12 @@ namespace NP {
 				if (opts.verbose)
 					std::cout << "Starting" << std::endl;
 
-				Merge_options merge_opts{opts.merge_conservative, opts.merge_use_job_finish_times, opts.merge_depth};
+				Merge_options merge_opts{opts.merge_opts.conservative, opts.merge_opts.use_finish_times, opts.merge_opts.budget};
 				auto s = std::unique_ptr<State_space>(new State_space(prob.jobs, prob.prec, prob.aborts, prob.mutexes, prob.processors_initial_state,
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 					prob.problem_extensions,
 #endif
-					merge_opts, opts.timeout, opts.max_memory_usage, opts.max_depth, opts.early_exit, opts.verbose
+					merge_opts, opts.timeout, opts.max_memory, opts.max_depth, opts.early_exit, opts.verbose
 #ifdef CONFIG_PARALLEL
 					, opts.parallel_enabled, opts.num_threads
 #endif
@@ -113,7 +114,7 @@ namespace NP {
 					, opts.pruning_cond
 #endif
 				));
-				s->be_naive = opts.be_naive;
+				s->config.be_naive = opts.be_naive;
 				if (opts.verbose)
 					std::cout << "Analysing" << std::endl;
 				s->resource_monitor.start_timing();
@@ -247,25 +248,9 @@ namespace NP {
 			}
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
-#ifdef CONFIG_PARALLEL
-			// Thread-safe concurrent queue for storing nodes during parallel execution
-			typedef tbb::concurrent_queue<Node_ref> Nodes;
-#else
-			typedef std::deque<Node_ref> Nodes;
-#endif
-			typedef std::vector<Nodes> Nodes_storage;
-
 		private:
-
-			typedef typename std::forward_list<Node_ref> Node_refs;
-			typedef typename std::forward_list<State_ref> State_refs;
-			
-#ifdef CONFIG_PARALLEL
-			typedef tbb::concurrent_unordered_map<hash_value_t, Node_refs> Nodes_map;
-#else
-			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
-#endif
 			typedef const Job<Time>* Job_ref;
+			using Nodes = typename States_manager<Time>::Node_refs;
 
 			// Similar to uni/space.hpp, make Response_times a vector of intervals.
 
@@ -287,26 +272,16 @@ namespace NP {
 			bool timed_out;
 			bool mem_out;
 			bool observed_deadline_miss;
-			bool early_exit;
-
+			
 			// node and state where a deadline miss was observed
 			Node_ref deadline_miss_node;
 			State_ref deadline_miss_state;
 
-			const unsigned int max_depth;
+			// Configuration
+			Analysis_options config;
 
-			bool be_naive;
-
-			struct Merge_options {
-				bool conservative; 
-				bool use_finish_times; 
-				int budget;
-			};
-			const Merge_options merge_opts;
-			Nodes_storage nodes_storage;
-			Nodes_map nodes_by_key;
-			Object_pool<Node> node_pool;
-			Object_pool<State> state_pool;
+			// manager that maintains the set of nodes and states being explored
+			States_manager<Time> states_mgr;
 
 			// Resource monitoring and statistics
 			Exploration_statistics statistics;
@@ -360,9 +335,6 @@ namespace NP {
 				, observed_deadline_miss(false)
 				, deadline_miss_state(nullptr)
 				, deadline_miss_node(nullptr)
-				, be_naive(false)		
-				, max_depth(max_depth)
-				, merge_opts(merge_options)
 				, verbose(verbose)
 				, statistics(jobs.size())
 				, resource_monitor(max_cpu_time, max_memory, max_depth)
@@ -377,8 +349,7 @@ namespace NP {
 				, current_job_count(0)
 				, num_cpus(cores_initial_state.size())
 				, cores_initial_state(cores_initial_state)
-				, early_exit(early_exit)
-				, nodes_storage(2)
+				, states_mgr(2)
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 				, log(log_opts.log)
 				, logger(log_opts.log_cond)
@@ -388,7 +359,18 @@ namespace NP {
 				, secateur(pruning_cond)
 #endif
 			{
+				// Initialize configuration
+				config.merge_opts = merge_options;
+				config.timeout = max_cpu_time;
+				config.max_memory = max_memory;
+				config.max_depth = max_depth;
+				config.early_exit = early_exit;
+				config.be_naive = false;
+				config.verbose = verbose;
 #ifdef CONFIG_PARALLEL
+				config.parallel_enabled = parallel_enabled;
+				config.num_threads = num_threads;
+
 				// Initialize TBB task arena with specified thread count 
 				if (parallel_enabled) {
 					if (num_threads > 0) {
@@ -402,6 +384,9 @@ namespace NP {
 				for (size_t i = 0; i < rta_mutexes.size(); ++i) {
 					rta_mutexes[i] = std::make_unique<std::mutex>();
 				}
+#endif
+#ifdef CONFIG_PRUNING
+				config.pruning_active = pruning_active;
 #endif
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				// check if the MK analysis extension is registered
@@ -446,7 +431,7 @@ namespace NP {
 				if (j.exceeds_deadline(range.upto())) {
 					observed_deadline_miss = true;
 
-					if (early_exit)
+					if (config.early_exit)
 						aborted = true;
 				}
 			}
@@ -476,45 +461,26 @@ namespace NP {
 
 			Nodes& nodes(const int depth = 0)
 			{
-				return nodes_storage[(current_job_count+ depth)% nodes_storage.size()];
-			}
-
-			template <typename... Args>
-			Node_ref alloc_node(const int depth, Args&&... args)
-			{
-				Node_ref n = node_pool.acquire(std::forward<Args>(args)...);
-#ifdef CONFIG_PARALLEL
-				if (parallel_enabled) {
-					nodes_storage[(current_job_count + depth) % nodes_storage.size()].push(n);
-				} else {
-					nodes_storage[(current_job_count + depth) % nodes_storage.size()].push(n);
-				}
-#else
-				nodes_storage[(current_job_count + depth) % nodes_storage.size()].push_back(n);
-#endif
-				return n;
-			}
-
-			template <typename... Args>
-			State_ref new_state(Args&&... args)
-			{
-				return state_pool.acquire(std::forward<Args>(args)...);
+				return states_mgr.get_nodes_at_depth((current_job_count+ depth) % 2);
 			}
 
 			template <typename... Args>
 			void new_or_merge_state(Node& n, Args&&... args)
 			{
 				// create a new state.
-				State_ref new_s = new_state(std::forward<Args>(args)...);
+				State_ref new_s = states_mgr.new_state(std::forward<Args>(args)...);
 #ifndef CONFIG_PARALLEL
 				if (observed_deadline_miss)
 					deadline_miss_state = new_s;
 #endif
 				// try to merge the new state with existing states in node n.
 				if (!(n.get_states()->empty())) {
-					int n_states_merged = n.merge_states(*new_s, merge_opts.conservative, merge_opts.use_finish_times, merge_opts.budget);
+					int n_states_merged = n.merge_states(*new_s, 
+						config.merge_opts.conservative, 
+						config.merge_opts.use_finish_times, 
+						config.merge_opts.budget);
 					if (n_states_merged > 0) {
-						release_state(new_s); // if we could merge no need to keep track of the new state anymore
+						states_mgr.release_state(new_s); // if we could merge no need to keep track of the new state anymore
 						statistics.remove_states(n_states_merged - 1);
 					}
 					else
@@ -533,35 +499,26 @@ namespace NP {
 
 			void release_state(const std::shared_ptr<State>& s)
 			{
-				state_pool.release(s);
+				states_mgr.release_state(s);
 			}
 
 			void release_node(const std::shared_ptr<Node>& n)
 			{
-				node_pool.release(n);
-			}
-
-			void cache_node(Node_ref n)
-			{
-				// create a new list if needed, or lookup if already existing
-				auto res = nodes_by_key.emplace(
-					std::make_pair(n->get_key(), Node_refs()));
-
-				auto pair_it = res.first;
-				Node_refs& list = pair_it->second;
-
-				list.push_front(n);
+				states_mgr.release_node(n);
 			}
 
 			template <typename... Args>
 			Node_ref new_node(const int depth, Args&&... args)
 			{
-				Node_ref n = alloc_node(depth, std::forward<Args>(args)...);
-				DM("new node - global " << n << std::endl);
-				// add node to nodes_by_key map.
-				cache_node(n);
 				statistics.count_node();
-				return n;
+				auto d = (current_job_count + depth) % 2;
+				return states_mgr.new_node(d, std::forward<Args>(args)...);
+			}
+
+			template <typename... Args>
+			State_ref new_state(Args&&... args)
+			{
+				return states_mgr.new_state(std::forward<Args>(args)...);
 			}
 
 			void check_cpu_timeout()
@@ -612,7 +569,7 @@ namespace NP {
 							// of being scheduled before its deadline anymore.
 							observed_deadline_miss = true;
 							// if we stop at the first deadline miss, abort and create node in the graph for explanation purposes
-							if (early_exit)
+							if (config.early_exit)
 							{
 								aborted = true;
 								// create a dummy node for explanation purposes
@@ -776,25 +733,14 @@ namespace NP {
 						update_finish_times(j, ftimes);
 
 						// If be_naive, a new node and a new state should be created for each new job dispatch.
-						if (be_naive)
+						if (config.be_naive)
 							next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
 
 						// if we do not have a pointer to a node with the same set of scheduled job yet,
 						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
 						if (next == nullptr)
 						{
-							const auto pair_it = nodes_by_key.find(n->next_key(j));
-							if (pair_it != nodes_by_key.end()) {
-								Job_set new_sched_jobs{ n->get_scheduled_jobs(), j.get_job_index() };
-								for (Node_ref other : pair_it->second) {
-									if (other->get_scheduled_jobs() == new_sched_jobs)
-									{
-										next = other;
-										DM("=== dispatch: next exists." << std::endl);
-										break;
-									}
-								}
-							}
+							next = states_mgr.find_node(n->next_key(j), n->get_scheduled_jobs(), j.get_job_index());
 							// If there is no node yet, create one.
 							if (next == nullptr)
 								next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
@@ -814,25 +760,28 @@ namespace NP {
 #endif
 
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
-					// only do that if we stop the analysis when a deadline miss is found 
-					if (be_naive && early_exit) {
-						check_for_deadline_misses(*n, *next);
-					}
+						// only do that if we stop the analysis when a deadline miss is found 
+						if (config.be_naive && config.early_exit) {
+							check_for_deadline_misses(*n, *next);
+						}
 
-					statistics.count_edge();
+						statistics.count_edge();
 
-					if (observed_deadline_miss) {
-#ifndef CONFIG_PARALLEL
-						deadline_miss_node = next;
-#endif
-						return dispatched_one;
+						if (observed_deadline_miss) {
+	#ifndef CONFIG_PARALLEL
+							deadline_miss_node = next;
+	#endif
+							return dispatched_one;
+						}
 					}
-				}
-			}				// if we stop the analysis when a deadline miss is found, then check whether a job will certainly miss 
+				}				
+				
+				// if we stop the analysis when a deadline miss is found, then check whether a job will certainly miss 
 				// its deadline because of when the processors become free next.
 				// if we are not using the naive exploration, we check for deadline misses only once per job dispatched
-				if (early_exit && !be_naive && next != nullptr)
+				if (config.early_exit && !config.be_naive && next != nullptr) {
 					check_for_deadline_misses(*n, *next);
+				}
 
 				return dispatched_one;
 			}
@@ -936,7 +885,7 @@ namespace NP {
 			// naive: no state merging
 			void explore_naively()
 			{
-				be_naive = true;
+				config.be_naive = true;
 				explore();
 			}
 
@@ -945,9 +894,9 @@ namespace NP {
 				long long last_time = get_cpu_time();
 				unsigned int target_depth;
 				
-				if (verbose) {
+				if (config.verbose) {
 					std::cout << "0%; 0s";
-					target_depth = std::max((unsigned int)state_space_data.num_jobs(), max_depth);
+					target_depth = std::max((unsigned int)state_space_data.num_jobs(), config.max_depth);
 				}
 				
 				unsigned long last_num_states = statistics.get_num_states();
@@ -975,7 +924,7 @@ namespace NP {
 					if (time > last_time + 4) {
 						// check memory usage
 						long mem = check_memory_abort();
-						if (verbose) {
+						if (config.verbose) {
 							// update progress information approxmately every 4 seconds of runtime
 #ifdef __APPLE__
 							std::cout << "\r" << (int)(((double)current_job_count / target_depth) * 100) << "% (" << current_job_count << "/" << target_depth << "); " << time << "s; " << mem / 1024 << "KiB";
@@ -1007,10 +956,7 @@ namespace NP {
 
 										// Clean up nodes that are no longer referenced
 										if (node.use_count() == 1) {
-											auto states = node->get_states();
-											for (auto s = states->begin(); s != states->end(); s++) {
-												release_state(*s);
-											}
+											states_mgr.release_states_of(node);
 											release_node(node);
 										}
 									}
@@ -1026,10 +972,7 @@ namespace NP {
 								break;
 
 							if (node.use_count() == 1) {
-								auto states = node->get_states();
-								for (auto s = states->begin(); s != states->end(); s++) {
-									release_state(*s);
-								}
+								states_mgr.release_states_of(node);
 								release_node(node);
 							}
 						}
@@ -1044,23 +987,20 @@ namespace NP {
 
 						// If the node is not refered to anymore, we can reuse the node and state objects for other states.
 						if (node.use_count() == 1) {
-							auto states = node->get_states();
-							for (auto s = states->begin(); s != states->end(); s++) {
-								release_state(*s);
-							}
+							states_mgr.release_states_of(node);
 							release_node(node);
 						}
 					}
 #endif
 
 					// clean up the state cache if necessary
-					if (!be_naive)
-						nodes_by_key.clear();
+					if (!config.be_naive)
+						states_mgr.clear_cache();
 
 					nodes().clear();
 					current_job_count++;
 				}
-				if (verbose) {
+				if (config.verbose) {
 #if __APPLE__
 					std::cout << "\r100%; " << get_cpu_time() << "s; " << resource_monitor.get_memory_usage() / 1024 << "KiB" << std::endl << "Terminating" << std::endl;
 #else
@@ -1068,7 +1008,7 @@ namespace NP {
 #endif
 				}
 				// clean out any remaining nodes
-				nodes_storage.clear();
+				states_mgr.clear();
 			}
 
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH

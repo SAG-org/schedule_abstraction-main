@@ -350,7 +350,7 @@ namespace NP {
 			}
 
 			// export the node information to the stream
-			void export_node (std::ostream& stream, const Workload& jobs)
+			void export_node(std::ostream& stream, const Workload& jobs)
 			{
 				stream << "=====Node=====\n"
 					<< "Ready successors: [[<task_id>,<job_id>], ...]\n"
@@ -416,7 +416,6 @@ namespace NP {
 				// Note: This method returns a pointer to the internal container,
 				// which is inherently not thread-safe. The caller must ensure
 				// proper synchronization when accessing the returned pointer.
-				// Consider using states_size() and iterator methods instead.
 #endif
 				return &states;
 			}
