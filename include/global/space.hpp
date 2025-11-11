@@ -613,25 +613,34 @@ namespace NP {
 			}
 
 			// assumes all predecessors of j have been dispatched
+			Time earliest_start_times( const Node& n, const State& s, 
+				const Job<Time>& j, const unsigned int ncores = 1) const
+			{
+				auto rt = state_space_data.earliest_ready_time(n, s, j);
+				auto at = s.core_availability(ncores).min();
+				return std::max(rt, at);
+			}
+
+			// assumes all predecessors of j have been dispatched
+			Time latest_start_times( const Node& n, const State& s, 
+				const Job<Time>& j, const Time t_wc, const Time t_high,
+				const Time t_avail, const unsigned int ncores = 1) const
+			{
+				return std::min(t_wc,
+					std::min(t_high, t_avail) - Time_model::constants<Time>::epsilon());
+			}
+
+			// assumes all predecessors of j have been dispatched
 			// NOTE: we don't use Interval<Time> here because the
 			//       Interval c'tor sorts its arguments.
 			std::pair<Time, Time> start_times( const Node& n, const State& s, 
 				const Job<Time>& j, const Time t_wc, const Time t_high,
 				const Time t_avail, const unsigned int ncores = 1) const
 			{
-				auto rt = state_space_data.earliest_ready_time(n, s, j);
-				auto at = s.core_availability(ncores).min();
-				Time est = std::max(rt, at);
-
-				DM("rt: " << rt << std::endl
-					<< "at: " << at << std::endl);
-
-				Time lst = std::min(t_wc,
-					std::min(t_high, t_avail) - Time_model::constants<Time>::epsilon());
-
+				Time est = earliest_start_times(n, s, j, ncores);
+				Time lst = latest_start_times(n, s, j, t_wc, t_high, t_avail, ncores);
 				DM("est: " << est << std::endl);
 				DM("lst: " << lst << std::endl);
-
 				return { est, lst };
 			}
 
@@ -692,39 +701,58 @@ namespace NP {
 					if (next_dispatch_min_prio != NULL && next_dispatch_min_prio->higher_priority_than(j))
 						continue;
 
+					// calculate when will the job be ready at the earliest
+					Time rt = state_space_data.earliest_ready_time(*n, *s, j);
+					if (t_high_wos <= rt)   
+						continue; // a higher priority source job will be ready before j can start, j will not be dispatched next
+					
+					// calculate t_wc: earliest time by which a job is ready and enough cores are available to execute it
+					Time t_wc = std::max(s->core_availability().max(), next_certain_job_ready_time(*n, *s));
+					if (t_wc < rt)
+						continue; // another job will be dispatched before j is ready, j will not be dispatched next
+
+					// check for all possible parallelism levels of the moldable gang job j 
+					//(if j is not gang or not moldable than min_paralellism = max_parallelism and 
+					// costs only constains a single element).
 					const auto& costs = j.get_all_costs();
-					// check for all possible parallelism levels of the moldable gang job j (if j is not gang or not moldable than min_paralellism = max_parallelism and costs only constains a single element).
-					//for (unsigned int p = j.get_max_parallelism(); p >= j.get_min_parallelism(); p--)
-					for (auto it = costs.rbegin(); it != costs.rend(); it++)
+					for (auto it = costs.begin(); it != costs.end(); it++)
 					{
 						unsigned int p = it->first;
-						// Calculate t_wc and t_high
-						Time t_wc = std::max(s->core_availability().max(), next_certain_job_ready_time(*n, *s));
-
-						Time t_high_succ = state_space_data.next_certain_higher_priority_successor_job_ready_time(*n, *s, j, p);
-						Time t_high_gang = state_space_data.next_certain_higher_priority_gang_source_job_ready_time(*n, *s, j, p, t_wc + 1);
+						// calculate earliest time j may start executing in state s on p cores
+						auto at = s->core_availability(p).min();
+						if (t_wc < at)
+							break; // another job will be dispatched before enough cores are free to dispatch j, j will not be dispatched next on p or more cores
+						if (t_high_wos <= at)   
+							break; // a higher priority source job will be ready before enough cores are free to dispatch j, j will not be dispatched next
+						Time est = std::max(rt, at);
+						
+						// Calculate t_high
+						Time t_high_succ = state_space_data.next_certain_higher_priority_successor_job_ready_time(*n, *s, j, p, est);
+						if (t_high_succ <= est)
+							continue; // a higher priority successor job will be dispatched before j can start
+						Time t_high_gang = state_space_data.next_certain_higher_priority_gang_source_job_ready_time(*n, *s, j, p, est, t_wc + 1);
+						if (t_high_gang <= est)
+							continue; // a higher priority gang source job will be dispatched before j can start
 						Time t_high = std::min(t_high_wos, std::min(t_high_gang, t_high_succ));
-
 						// If j can execute on ncores+k cores, then 
 						// the scheduler will start j on ncores only if 
 						// there isn't ncores+k cores available
 						Time t_avail = Time_model::constants<Time>::infinity();
 						if (p < j.get_max_parallelism())
-							t_avail = s->core_availability(std::prev(it)->first).max();
-
+							t_avail = s->core_availability(std::next(it)->first).max();
+						if (t_avail <= est)
+							continue; // j will be started with higher parallelism than p
 						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << std::endl);
-						auto _st = start_times(*n, *s, j, t_wc, t_high, t_avail, p);
-						if (_st.first > t_wc || _st.first >= t_high || _st.first >= t_avail)
-							continue; // nope, not next job that can be dispatched in state s, try the next state.
-
-						Interval<Time> stimes(_st);
+						// latest time j may start executing in state s on p cores
+						Time lst = latest_start_times(*n, *s, j, t_wc, t_high, t_avail, p);
+						Interval<Time> stimes(est, lst);
 						//calculate the job finish time interval
 						auto exec_time = it->second;
-						Time eft = stimes.min() + exec_time.min();
-						Time lft = stimes.max() + exec_time.max();
+						Time eft = est + exec_time.min();
+						Time lft = lst + exec_time.max();
 
 						// check for possible abort actions
-						Interval<Time> ftimes = calculate_abort_time(j, _st.first, _st.second, eft, lft);
+						Interval<Time> ftimes = calculate_abort_time(j, est, lst, eft, lft);
 
 						// yep, job j is a feasible successor in state s
 						dispatched_one = true;
@@ -753,12 +781,10 @@ namespace NP {
 							next->get_jobs_with_pending_start_successors(), next->get_jobs_with_pending_finish_successors(),
 							next->get_ready_successor_jobs(), state_space_data, next->get_next_certain_source_job_release(), p
 						);
-
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 						if(log)
 							logger.log_job_dispatched(n, j, stimes, ftimes, p, next, current_job_count);
 #endif
-
 						// make sure we didn't skip any jobs which would then certainly miss its deadline
 						// only do that if we stop the analysis when a deadline miss is found 
 						if (config.be_naive && config.early_exit) {

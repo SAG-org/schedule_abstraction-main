@@ -190,7 +190,7 @@ namespace NP {
 				// calculate the cores availability this_intervals resulting from dispatching job j on ncores in state 'from'
 				core_avail.update(from.core_avail, start_times, finish_times, ncores, n_prec);
 
-				assert(core_avail.size() > 0);
+				assert(core_avail.num_cores() > 0);
 
 				// save the job start of every job with a successor with a start to start constraint that is not executed yet in the current state
 				job_start_times.update(from.job_start_times, j, start_times, jobs_with_pending_start_succ);

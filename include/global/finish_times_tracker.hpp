@@ -49,7 +49,7 @@ public:
 				// it must have had non-completed successors in the previous state too, 
 				// thus there is no risk to reach the end iterator
 				while (it->job_idx != job) {
-					assert(it != from.job_finish_times.end());
+					assert(it != from.job_times.end());
 					++it;
 				}
 

@@ -527,8 +527,10 @@ namespace NP {
 				const State& s,
 				const Job<Time>& reference_job,
 				const unsigned int ncores,
+				Time lower_bound,
 				Time until = Time_model::constants<Time>::infinity()) const
 			{
+				assert(lower_bound < until);
 				Time when = until;
 
 				// a higher priority source job cannot be released before 
@@ -566,6 +568,9 @@ namespace NP {
 							break;
 						}
 					}
+					if (when <= lower_bound) {
+						break;
+					}
 				}
 				return when;
 			}
@@ -573,19 +578,19 @@ namespace NP {
 			// Assuming that `reference_job` is dispatched next, find the earliest time by which a successor job (i.e., a job with predecessors) 
 			// of higher priority than the reference_job is certainly ready in system state 's'.
 			//
-			// Let `ready_min` denote the earliest time at which `reference_job` becomes ready
+			// Let `lower_bound` denote the earliest time at which `reference_job` becomes ready
 			// and let `latest_ready_high` denote the return value of this function.
 			//
-			// If `latest_ready_high <= `ready_min`, the assumption that `reference_job` is dispatched next lead to a contradiction,
+			// If `latest_ready_high <= `lower_bound`, the assumption that `reference_job` is dispatched next lead to a contradiction,
 			// hence `reference_job` cannot be dispatched next. In this case, the exact value of `latest_ready_high` is meaningless,
-			// except that it must be at most `ready_min`. After all, it was computed under an assumption that cannot happen.
+			// except that it must be at most `lower_bound`. After all, it was computed under an assumption that cannot happen.
 			Time next_certain_higher_priority_successor_job_ready_time(
 				const Node& n,
 				const State& s,
 				const Job<Time>& reference_job,
-				const unsigned int ncores
+				const unsigned int ncores,
+				Time lower_bound
 			) const {
-				auto ready_min = earliest_ready_time(n, s, reference_job);
 				Time latest_ready_high = Time_model::constants<Time>::infinity();
 
 				// a higer priority successor job cannot be ready before 
@@ -599,7 +604,7 @@ namespace NP {
 					if (j_high.higher_priority_than(reference_job)) {
 						// does it beat what we've already seen?
 						latest_ready_high = std::min(latest_ready_high, conditional_latest_ready_time(n, s, j_high, reference_job.get_job_index(), ncores));
-						if (latest_ready_high <= ready_min) break;
+						if (latest_ready_high <= lower_bound) break;
 					}
 				}
 				return latest_ready_high;
