@@ -47,7 +47,7 @@ namespace NP {
 		void post_init_checks() {
 			// at least one processor is defined
 			assert(processors_initial_state.size() > 0);
-			validate_jobs<Time>(jobs, processors_initial_state.size());
+			validate_jobs<Time>(jobs, (unsigned int) processors_initial_state.size());
 			if (!prec.empty()) {
 				validate_prec_cstrnts<Time>(prec);
 			}
@@ -200,7 +200,7 @@ namespace NP {
 		// After how many scheduling decisions (i.e., depth of the
 		// schedule graph) should we terminate the analysis?
 		// Zero means unlimited.
-		unsigned int max_depth;
+		unsigned long long max_depth;
 
 		// Should we terminate the analysis upon encountering the first
 		// deadline miss?

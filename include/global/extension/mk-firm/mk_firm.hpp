@@ -159,7 +159,7 @@ namespace NP {
 			{
 				auto num_tasks = mk_constraints.size();
 				for (const auto& j : jobs) {
-					int c = mk_constraints.count(j.get_task_id());
+					auto c = mk_constraints.count(j.get_task_id());
 					if (c == 0)
 						throw std::runtime_error("An MK constraint must be defined for each task in the workload");
 					if (c > 1)

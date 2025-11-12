@@ -141,7 +141,7 @@ static Analysis_result analyze(
 	if (platform_defined) {
 		platform_spec = plat_is_yaml ? NP::parse_platform_spec_yaml<Time>(platform_in) : NP::parse_platform_spec_csv<Time>(platform_in);
 		// Update num_processors based on platform specification
-		num_processors = platform_spec.size();
+		num_processors = (unsigned int) platform_spec.size();
 	}
 	else {
 		platform_spec.resize(num_processors, { 0,0 });
@@ -158,13 +158,13 @@ static Analysis_result analyze(
 	NP::Analysis_options opts;
 	opts.verbose = want_verbose;
 	opts.timeout = timeout;
-	opts.max_memory_usage = mem_max;
+	opts.max_memory = mem_max;
 	opts.max_depth = max_depth;
 	opts.early_exit = !continue_after_dl_miss;
 	opts.be_naive = want_naive;
-	opts.merge_conservative = merge_conservative;
-	opts.merge_depth = merge_depth;
-	opts.merge_use_job_finish_times = merge_use_job_finish_times;
+	opts.merge_opts.conservative = merge_conservative;
+	opts.merge_opts.budget = merge_depth;
+	opts.merge_opts.use_finish_times = merge_use_job_finish_times;
 #ifdef CONFIG_PARALLEL
 	opts.parallel_enabled = want_parallel;
 	opts.num_threads = num_threads;
@@ -232,8 +232,7 @@ static Analysis_result analyze(
 			    << j.get_job_id() << ", "
 			    << finish.from() << ", "
 			    << finish.until() << ", "
-			    << std::max<long long>(0,
-			                           (finish.from() - j.earliest_arrival()))
+			    << std::max<Time>(0, finish.from() - j.earliest_arrival())
 			    << ", "
 			    << (finish.until() - j.earliest_arrival())
 			    << std::endl;
@@ -243,7 +242,7 @@ static Analysis_result analyze(
 	auto width_stream = std::ostringstream();
 	if (want_width_file) {
 		width_stream << "Depth, Width (#Nodes), Width (#States)" << std::endl;
-		const std::vector<std::pair<unsigned long, unsigned long>>& width = space->evolution_exploration_front_width();
+		const auto& width = space->evolution_exploration_front_width();
 		for (int d = 0; d < problem.jobs.size(); d++) {
 			width_stream << d << ", "
 					   << width[d].first
@@ -268,7 +267,7 @@ static Analysis_result analyze(
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 	auto mk_results = std::ostringstream();
 	if (want_mk) {
-		mk_results = space->template get_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
+		mk_results = space->template export_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
 	}
 #endif
 
@@ -499,7 +498,7 @@ static void process_file(const std::string& fname)
 				  << ",  " << (int)result.out_of_memory
 		          << ",  " << num_processors
 		          << std::endl;
-	} catch (std::ios_base::failure& ex) {
+	} catch (std::ios_base::failure&) {
 		std::cerr << fname;
 		if (want_precedence)
 			std::cerr << " + " << precedence_file;

@@ -19,7 +19,7 @@ namespace NP {
 		public:
 			State_space_data_extension() = default;
 			virtual ~State_space_data_extension() = default;
-			virtual std::ostringstream get_results(const State_space_data<Time>& sp_data) const 
+			virtual std::ostringstream export_results(const State_space_data<Time>& sp_data) const 
 			{ 
 				return std::ostringstream(); 
 			}

@@ -105,7 +105,7 @@ public:
 		predecessors.reserve(4 * num_cores);
 		// we must find num_cores jobs that will be ready as soon as their predecessors complete.
 		unsigned int c = num_cores;
-		unsigned int rem_rjobs = ready_succ_jobs.size();
+		unsigned int rem_rjobs = (unsigned int) ready_succ_jobs.size();
 
 		for (auto j : ready_succ_jobs) {
 			// skip gang jobs that require more than one core

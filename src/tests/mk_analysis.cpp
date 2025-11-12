@@ -406,7 +406,7 @@ TEST_CASE("[MK] Full MK analysis - all jobs meet deadlines") {
     CHECK(space->is_schedulable());
     
     // Since the system is schedulable, the extension should have recorded 0 miss counts
-    auto mk_res = space->get_results<MK_sp_data_extension<dtime_t>, std::vector<Interval<int>>>();
+    auto mk_res = space->get_results<MK_sp_data_extension<dtime_t>>();
     CHECK(mk_res.size() != 0);
     for (const auto& misses : mk_res) {
         CHECK(misses.min() == 0);
@@ -453,7 +453,7 @@ TEST_CASE("[MK] Full MK analysis - simple example with deadline misses") {
     CHECK(!space->is_schedulable());  // Should be unschedulable due to tight deadlines and blocking
     
     // Retrieve MK results
-    auto mk_res = space->get_results<MK_sp_data_extension<dtime_t>, std::vector<Interval<int>>>();
+    auto mk_res = space->get_results<MK_sp_data_extension<dtime_t>>();
     CHECK(mk_res.size() == jobs.size());
     
     // jobs of task 1

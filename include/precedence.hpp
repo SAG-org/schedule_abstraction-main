@@ -26,7 +26,7 @@ namespace NP {
 				fromIndex = jobs_lookup.at(from);
 				toIndex = jobs_lookup.at(to);
 			}
-			catch (const std::out_of_range& e) {
+			catch (const std::out_of_range&) {
 				throw InvalidJobReference(from);
 			}
 		}
@@ -45,7 +45,7 @@ namespace NP {
 				fromIndex = jobs_lookup.at(from);
 				toIndex = jobs_lookup.at(to);
 			}
-			catch (const std::out_of_range& e) {
+			catch (const std::out_of_range&) {
 				throw InvalidJobReference(from);
 			}
 		}

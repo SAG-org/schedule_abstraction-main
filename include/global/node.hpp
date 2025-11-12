@@ -108,7 +108,7 @@ namespace NP {
 
 			Schedule_node(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 				: lookup_key{ 0 }
-				, num_cpus(proc_initial_state.size())
+				, num_cpus((unsigned int) proc_initial_state.size())
 				, finish_time{ 0, 0 }
 				, a_max{ Time_model::constants<Time>::infinity() }
 				, num_jobs_scheduled(0)
@@ -163,7 +163,7 @@ namespace NP {
 				states.clear();
 
 				lookup_key = 0;
-				num_cpus = proc_initial_state.size();
+				num_cpus = (unsigned int) proc_initial_state.size();
 				finish_time = { 0,0 };
 				a_max = Time_model::constants<Time>::infinity();
 				Time a_min = Time_model::constants<Time>::infinity();

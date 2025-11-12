@@ -31,7 +31,7 @@ public:
 	Resource_monitor(
 		double max_cpu_time = 0,
 		long max_memory = 0,
-		unsigned int max_depth = 0)
+		unsigned long long max_depth = 0)
 		: max_cpu_time(max_cpu_time)
 		, max_memory(max_memory)
 		, max_depth(max_depth)
@@ -107,7 +107,7 @@ public:
 	 * @param current_depth Current exploration depth
 	 * @return true if depth exceeded, false otherwise
 	 */
-	bool check_depth(unsigned int current_depth)
+	bool check_depth(unsigned long long current_depth)
 	{
 		if (max_depth > 0 && current_depth > max_depth) {
 			depth_exceeded = true;
@@ -166,7 +166,7 @@ public:
 private:
 	const double max_cpu_time;  // in seconds
 	const long max_memory;      // in KiB
-	const unsigned int max_depth;
+	const unsigned long long max_depth;
 	
 	Processor_clock cpu_clock;
 	Memory_monitor memory_monitor;

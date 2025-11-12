@@ -12,6 +12,7 @@
 #include <iostream>
 #include <ostream>
 #include <memory>
+#include <type_traits>
 
 #ifdef CONFIG_PARALLEL
 #include <atomic>
@@ -192,27 +193,27 @@ namespace NP {
 			}
 
 			//currently unused, only required to compile nptest.cpp correctly
-			unsigned long number_of_nodes() const
+			unsigned long long number_of_nodes() const
 			{
 				return statistics.get_num_nodes();
 			}
 
-			unsigned long number_of_states() const
+			unsigned long long number_of_states() const
 			{
 				return statistics.get_num_states();
 			}
 
-			unsigned long number_of_edges() const
+			unsigned long long number_of_edges() const
 			{
 				return statistics.get_num_edges();
 			}
 
-			unsigned long max_exploration_front_width() const
+			unsigned long long max_exploration_front_width() const
 			{
 				return statistics.get_max_width();
 			}
 
-			const std::vector<std::pair<unsigned long, unsigned long>>& evolution_exploration_front_width() const
+			const std::vector<std::pair<unsigned long long, unsigned long long>>& evolution_exploration_front_width() const
 			{
 				return statistics.get_width_evolution();
 			}
@@ -225,26 +226,28 @@ namespace NP {
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 			// return the results of a specific analysis extension in a string stream
 			template <typename Extension_type>
-			std::ostringstream get_results()
+			std::ostringstream export_results()
 			{
 				Extension_type* mk_data = state_space_data.get_extensions().template get<Extension_type>();
 				if (mk_data == nullptr) {
 					std::cerr << "Error: analysis extension is not available." << std::endl;
 					return std::ostringstream();
 				}
-				return mk_data->get_results(state_space_data);
+				return mk_data->export_results(state_space_data);
 			}
 
-			// return the results of a specific analysis extension in a extension specific format
-			template <typename Extension_type, typename Result_type>
-			Result_type get_results() const
+			// return the results of a specific analysis extension in an extension-specific format
+			template <typename Extension_type>
+			auto get_results() const -> typename std::remove_reference<decltype(std::declval<Extension_type>().get_results())>::type
 			{
-				Extension_type* mk_data = state_space_data.get_extensions().template get<Extension_type>();
-				if (mk_data == nullptr) {
+				Extension_type* data = state_space_data.get_extensions().template get<Extension_type>();
+				if (data == nullptr) {
 					std::cerr << "Error: analysis extension is not available." << std::endl;
-					return Result_type();
+					// construct and return an empty value of the deduced (non-reference) return type
+					using result_t = typename std::remove_reference<decltype(data->get_results())>::type;
+					return result_t();
 				}
-				return mk_data->get_results();
+				return data->get_results();
 			}
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
@@ -315,7 +318,7 @@ namespace NP {
 				Merge_options merge_options,
 				double max_cpu_time = 0,
 				long max_memory = 0,
-				unsigned int max_depth = 0,
+				unsigned long long max_depth = 0,
 				bool early_exit = true,
 				bool verbose = false
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
@@ -347,7 +350,7 @@ namespace NP {
 				, rta_mutexes(jobs.size())
 #endif
 				, current_job_count(0)
-				, num_cpus(cores_initial_state.size())
+				, num_cpus((unsigned int) cores_initial_state.size())
 				, cores_initial_state(cores_initial_state)
 				, states_mgr(2)
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
@@ -508,10 +511,10 @@ namespace NP {
 			}
 
 			template <typename... Args>
-			Node_ref new_node(const int depth, Args&&... args)
+			Node_ref new_node(const unsigned int depth, Args&&... args)
 			{
 				statistics.count_node();
-				auto d = (current_job_count + depth) % 2;
+				unsigned int d = (unsigned int)((current_job_count + depth) % 2);
 				return states_mgr.new_node(d, std::forward<Args>(args)...);
 			}
 
@@ -917,15 +920,15 @@ namespace NP {
 
 			void explore()
 			{
-				long long last_time = get_cpu_time();
-				unsigned int target_depth;
+				long long last_time = (long long) get_cpu_time();
+				unsigned long long target_depth;
 				
 				if (config.verbose) {
 					std::cout << "0%; 0s";
-					target_depth = std::max((unsigned int)state_space_data.num_jobs(), config.max_depth);
+					target_depth = std::max(state_space_data.num_jobs(), config.max_depth);
 				}
 				
-				unsigned long last_num_states = statistics.get_num_states();
+				unsigned long long last_num_states = statistics.get_num_states();
 				make_initial_node();
 
 				while (current_job_count < state_space_data.num_jobs()) {
@@ -942,11 +945,11 @@ namespace NP {
 					}
 
 					// keep track of exploration front width (main thread only - no protection needed)
-					unsigned long current_states = statistics.get_num_states();
+					unsigned long long current_states = statistics.get_num_states();
 					statistics.record_width(current_job_count, n, current_states - last_num_states);
 					last_num_states = current_states;
 
-					long long time = get_cpu_time();
+					long long time = (long long) get_cpu_time();
 					if (time > last_time + 4) {
 						// check memory usage
 						long mem = check_memory_abort();

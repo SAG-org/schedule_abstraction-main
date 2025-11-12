@@ -118,10 +118,10 @@ private:
 	 */
 	int find(Job_index job_idx) const
 	{
-		int start = 0;
-		int end = job_times.size();
+		unsigned int start = 0;
+		unsigned int end = (unsigned int) job_times.size();
 		while (start < end) {
-			int mid = (start + end) / 2;
+			unsigned int mid = (start + end) / 2;
 			if (job_times[mid].job_idx == job_idx) {
 				return mid;
 			} else if (job_times[mid].job_idx < job_idx) {

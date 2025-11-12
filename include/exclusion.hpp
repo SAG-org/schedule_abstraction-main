@@ -26,7 +26,7 @@ namespace NP {
 				jobA_idx = jobs_lookup.at(jobA);
 				jobB_idx = jobs_lookup.at(jobB);
 			}
-			catch (const std::out_of_range& e) {
+			catch (const std::out_of_range&) {
 				throw InvalidJobReference(jobA);
 			}
 		}
@@ -44,7 +44,7 @@ namespace NP {
 				jobA_idx = jobs_lookup.at(jobA);
 				jobB_idx = jobs_lookup.at(jobB);
 			}
-			catch (const std::out_of_range& e) {
+			catch (const std::out_of_range&) {
 				throw InvalidJobReference(jobA);
 			}
 		}

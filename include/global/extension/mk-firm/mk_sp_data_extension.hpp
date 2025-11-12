@@ -14,14 +14,14 @@ namespace NP {
 			template<class Time>
 			class MK_sp_data_extension : public State_space_data_extension<Time>
 			{
-				typedef Interval<int> Misses;
+				typedef Interval<unsigned int> Misses;
 				std::vector<Misses>  misses_per_job; // min and max number of misses in the window ending with the dispatch of each job
 				unsigned int num_tasks;
 				MK_constraints mk_constraints;
 			public:
 				MK_sp_data_extension(size_t num_jobs, const MK_constraints& mk_constraints)
 					: misses_per_job(num_jobs, Misses(-1, -1))
-					, num_tasks(mk_constraints.size())
+					, num_tasks((unsigned int) mk_constraints.size())
 					, mk_constraints(mk_constraints)
 				{
 					assert(mk_constraints.size() > 0);
@@ -37,20 +37,20 @@ namespace NP {
 					return misses_per_job;
 				}
 
-				std::ostringstream get_results(const State_space_data<Time>& sp_data) const override
+				std::ostringstream export_results(const State_space_data<Time>& sp_data) const override
 				{
 					auto ss = std::ostringstream();
 					ss << "Task ID, RespectMK, Min Misses, Max Misses" << std::endl;
 					const auto& jobs = sp_data.jobs;
-					std::unordered_map<Task_index, Interval<int>> misses_per_task;
+					std::unordered_map<Task_index, Interval<unsigned int>> misses_per_task;
 					for (const auto& j : jobs) {
 						auto t = j.get_task_id();
 						if (misses_per_task.find(t) == misses_per_task.end()) {
-							misses_per_task[t] = misses_per_job[j.get_task_id()];
+							misses_per_task[t] = misses_per_job[j.get_job_index()];
 						}
 						else {
-							misses_per_task[t].extend_to(misses_per_job[j.get_task_id()].max());
-							misses_per_task[t].reduce_to(misses_per_job[j.get_task_id()].min());
+							misses_per_task[t].extend_to(misses_per_job[j.get_job_index()].max());
+							misses_per_task[t].reduce_to(misses_per_job[j.get_job_index()].min());
 						}
 					}
 					for (const auto& [t, m] : misses_per_task) {

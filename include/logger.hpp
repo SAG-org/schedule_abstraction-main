@@ -38,7 +38,7 @@ namespace NP {
 			// - the monitored_interval interval in which the job is dispatched
 			Interval<Time> monitored_interval;
 			// - the monitored_depth of the SAG (how many monitored_jobs have been dispatched so far)
-			Interval<unsigned long> monitored_depth;
+			Interval<unsigned long long> monitored_depth;
 			// - the task dispatched
 			std::set<unsigned long> monitored_tasks;
 			// - the job dispatched
@@ -58,7 +58,7 @@ namespace NP {
 			{
 			}
 
-			Logging_condition(Interval<Time> t, Interval<unsigned long> depth, std::set<unsigned long> tasks,
+			Logging_condition(Interval<Time> t, Interval<unsigned long long> depth, std::set<unsigned long> tasks,
 				std::set<Job_index> jobs, std::set<Job_index> dispatched, std::set<Job_index> not_dispatched, 
 				bool deadline_miss)
 				: monitored_interval(t)
@@ -70,7 +70,7 @@ namespace NP {
 				, deadline_miss(deadline_miss)
 			{
 				// check if we should log everything
-				if (deadline_miss == false && monitored_depth.min() == 0 && monitored_depth.max() == std::numeric_limits<unsigned long>::max()
+				if (deadline_miss == false && monitored_depth.min() == 0 && monitored_depth.max() == std::numeric_limits<unsigned long long>::max()
 					&& monitored_interval.min() == 0 && monitored_interval.max() == Time_model::constants<Time>::infinity()
 					&& monitored_tasks.empty() && monitored_jobs.empty() && dispatched.empty() && not_dispatched.empty())
 
@@ -81,7 +81,7 @@ namespace NP {
 
 			// check if the logging condition is true for the given job, start time and depth
 			bool is_true(const Node_ptr& n, const Job<Time>& dispatched_j, const Interval<Time>& start,
-				bool deadline_missed, unsigned long depth) const
+				bool deadline_missed, unsigned long long depth) const
 			{
 				if (always_log) {
 					return true;
@@ -186,7 +186,7 @@ namespace NP {
 			// save the dispatch of job j between old_node and new_node
 			void log_job_dispatched(const Node_ptr& old_node, const Job<Time>& dispatched_j,
 				const Interval<Time>& start, Interval<Time> finish, unsigned int parallelism,
-				const Node_ptr& new_node, unsigned long depth) {
+				const Node_ptr& new_node, unsigned long long depth) {
 				if (condition.is_true(new_node, dispatched_j, start, dispatched_j.exceeds_deadline(finish.upto()), depth)) {
 					// create an edge and add it to the edge queue
 					edges.emplace_back(&dispatched_j, old_node, new_node, finish, parallelism);

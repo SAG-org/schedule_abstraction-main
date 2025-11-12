@@ -25,7 +25,7 @@ namespace NP {
                 {
                     auto spd_ext = state_space_data.get_extensions().template get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
 					auto num_tasks = spd_ext->get_num_tasks();
-                    for ( int i = 0; i < num_tasks; i++)
+                    for (unsigned int i = 0; i < num_tasks; i++)
                         sliding_misses.emplace_back(spd_ext->get_mk_window_length(i));
                 }
 
@@ -37,7 +37,7 @@ namespace NP {
                 {
                     auto spd_ext = state_space_data.get_extensions().template get<MK_sp_data_extension<Time>>(state_space_data_ext_id);
                     auto num_tasks = spd_ext->get_num_tasks();
-                    for (int i = 0; i < num_tasks; i++)
+                    for (unsigned int i = 0; i < num_tasks; i++)
                         sliding_misses.emplace_back(spd_ext->get_mk_window_length(i));
                 }
 

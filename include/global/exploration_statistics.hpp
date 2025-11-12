@@ -100,7 +100,7 @@ public:
 	/**
 	 * @brief Get the total number of nodes explored.
 	 */
-	unsigned long get_num_nodes() const
+	unsigned long long get_num_nodes() const
 	{
 #ifdef CONFIG_PARALLEL
 		return num_nodes.load(std::memory_order_relaxed);
@@ -112,7 +112,7 @@ public:
 	/**
 	 * @brief Get the total number of states created.
 	 */
-	unsigned long get_num_states() const
+	unsigned long long get_num_states() const
 	{
 #ifdef CONFIG_PARALLEL
 		return num_states.load(std::memory_order_relaxed);
@@ -124,7 +124,7 @@ public:
 	/**
 	 * @brief Get the total number of edges (transitions) explored.
 	 */
-	unsigned long get_num_edges() const
+	unsigned long long get_num_edges() const
 	{
 #ifdef CONFIG_PARALLEL
 		return num_edges.load(std::memory_order_relaxed);
@@ -136,7 +136,7 @@ public:
 	/**
 	 * @brief Get the maximum exploration front width observed.
 	 */
-	unsigned long get_max_width() const
+	unsigned long long get_max_width() const
 	{
 		return max_width;
 	}
@@ -146,7 +146,7 @@ public:
 	 * 
 	 * @return Vector of (front_width, new_states) pairs, one per job scheduled
 	 */
-	const std::vector<std::pair<unsigned long, unsigned long>>& 
+	const std::vector<std::pair<unsigned long long, unsigned long long>>& 
 	get_width_evolution() const
 	{
 		return width_evolution;
@@ -162,9 +162,9 @@ public:
 	 * @param states_added Number of new states created at this level
 	 */
 	void record_width(
-		unsigned long depth,
-		unsigned long front_width,
-		unsigned long states_added)
+		unsigned long long depth,
+		unsigned long long front_width,
+		unsigned long long states_added)
 	{
 		if (depth < width_evolution.size()) {
 			width_evolution[depth] = {front_width, states_added};
@@ -197,18 +197,18 @@ public:
 
 private:
 #ifdef CONFIG_PARALLEL
-	std::atomic<unsigned long> num_nodes;
-	std::atomic<unsigned long> num_states;
-	std::atomic<unsigned long> num_edges;
+	std::atomic<unsigned long long> num_nodes;
+	std::atomic<unsigned long long> num_states;
+	std::atomic<unsigned long long> num_edges;
 #else
-	unsigned long num_nodes;
-	unsigned long num_states;
-	unsigned long num_edges;
+	unsigned long long num_nodes;
+	unsigned long long num_states;
+	unsigned long long num_edges;
 #endif
 	
 	// These are only updated by main thread, no synchronization needed
-	unsigned long max_width;
-	std::vector<std::pair<unsigned long, unsigned long>> width_evolution;
+	unsigned long long max_width;
+	std::vector<std::pair<unsigned long long, unsigned long long>> width_evolution;
 };
 
 } // namespace Global

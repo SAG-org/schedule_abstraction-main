@@ -567,7 +567,7 @@ namespace NP {
 	{		
 		// Default values for logging condition parameters
 		Interval<Time> time_interval(0, Time_model::constants<Time>::infinity());
-		Interval<unsigned long> depth_interval(0, std::numeric_limits<unsigned long>::max());
+		Interval<unsigned long long> depth_interval(0, std::numeric_limits<unsigned long long>::max());
 		std::set<unsigned long> tasks;
 		std::set<Job_index> jobs;
 		std::set<Job_index> dispatched;
@@ -600,9 +600,9 @@ namespace NP {
 				if (conditions["Depth"]) {
 					YAML::Node depth_node = conditions["Depth"];
 					if (depth_node.IsSequence() && depth_node.size() == 2) {
-						unsigned long depth_min = depth_node[0].as<unsigned long>();
-						unsigned long depth_max = depth_node[1].as<unsigned long>();
-						depth_interval = Interval<unsigned long>(depth_min, depth_max);
+						unsigned long long depth_min = depth_node[0].as<unsigned long long>();
+						unsigned long long depth_max = depth_node[1].as<unsigned long long>();
+						depth_interval = Interval<unsigned long long>(depth_min, depth_max);
 					}
 					else
 						std::cerr << "Error reading log condition specification on depth. This field is going to be ignored." << std::endl;

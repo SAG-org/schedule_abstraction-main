@@ -57,7 +57,7 @@ public:
 	 */
 	unsigned int num_cores() const
 	{
-		return core_avail.size();
+		return (unsigned int) core_avail.size();
 	}
 	
 	/**
@@ -124,7 +124,7 @@ public:
 		unsigned int ncores_used,
 		unsigned int ncores_freed)
 	{
-		const int n_cores = from.core_avail.size();
+		const unsigned int n_cores = (unsigned int) from.core_avail.size();
 		core_avail.clear();
 		core_avail.reserve(n_cores);
 		
