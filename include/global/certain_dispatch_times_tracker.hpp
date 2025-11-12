@@ -5,6 +5,7 @@
 #include "time.hpp"
 #include "jobs.hpp"
 #include "global/state.hpp"
+#include "global/inter_job_constraints.hpp"
 #include "index_set.hpp"
 
 namespace NP {
@@ -21,7 +22,6 @@ template<class Time>
 class Certain_dispatch_times_tracker
 {
 	typedef Index_set Job_set;
-	using Inter_job_constraints = typename NP::Global::State_space_data<Time>::Inter_job_constraints;
 public:
 	/**
 	 * @brief Default constructor initializes all times to infinity.
@@ -163,7 +163,7 @@ private:
 	void update_earliest_certain_successor_job_dispatch(
 		const Schedule_state<Time>& state,
 		const std::vector<const Job<Time>*>& ready_succ_jobs,
-		const std::vector<Inter_job_constraints>& constraints,
+		const Inter_job_constraints<Time>& constraints,
 		const Core_availability_tracker<Time>& core_avail)
 	{
 		earliest_certain_successor_job_dispatch = Time_model::constants<Time>::infinity();

@@ -3,6 +3,7 @@
 
 #include "jobs.hpp"
 #include "global/state_space_data.hpp"
+#include "global/inter_job_constraints.hpp"
 #include "global/state.hpp"
 #include "index_set.hpp"
 
@@ -24,8 +25,6 @@ class Priority_tracker
 {
 public:
 	typedef const Job<Time>* Job_ref;
-	using Inter_job_constraints = typename State_space_data<Time>::Inter_job_constraints;
-	using Successor_delay_list = typename State_space_data<Time>::Delay_list;
 	
 	/**
 	 * @brief Default constructor initializes with no job.
@@ -96,7 +95,7 @@ public:
 	 * @param num_cores The number of cores in the system.
 	 */
 	void update(const Schedule_state<Time>& state,
-				const std::vector<Inter_job_constraints>& constraints,
+				const Inter_job_constraints<Time>& constraints,
 				const std::vector<const Job<Time>*>& ready_succ_jobs,
 				const Index_set& scheduled_jobs,
 				unsigned int num_cores)

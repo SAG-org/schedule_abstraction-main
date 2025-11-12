@@ -15,6 +15,7 @@
 #include "global/state_space_data.hpp"
 #include "global/ready_jobs_tracker.hpp"
 #include "global/pending_successors_tracker.hpp"
+#include "global/inter_job_constraints.hpp"
 #include "jobs.hpp"
 #include "util.hpp"
 
@@ -35,8 +36,7 @@ namespace NP {
 			typedef Schedule_state<Time> State;
 			typedef std::shared_ptr<State> State_ref;
 			typedef std::vector<Interval<Time>> Core_availability;
-			using Inter_job_constraints = typename State_space_data<Time>::Inter_job_constraints;
-
+			
 			Time earliest_pending_release;
 			Time next_certain_successor_jobs_dispatch;
 			Time next_certain_source_job_release;
@@ -299,7 +299,7 @@ namespace NP {
 				return scheduled_jobs.contains(j);
 			}
 
-			bool is_ready(const Job_index j, const Inter_job_constraints& constraints) const
+			bool is_ready(const Job_index j, const Job_constraints<Time>& constraints) const
 			{
 				for (const auto& pred : constraints.predecessors_start_to_start)
 				{

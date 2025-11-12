@@ -15,6 +15,7 @@
 #include "problem.hpp"
 #include "global/node.hpp"
 #include "global/state.hpp"
+#include "global/inter_job_constraints.hpp"
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 #include "global/extension/state_space_data_extension.hpp"
@@ -30,68 +31,14 @@ namespace NP {
 		template<class Time> class State_space_data
 		{
 		public:
-
-			typedef Scheduling_problem<Time> Problem;
-			typedef typename Scheduling_problem<Time>::Workload Workload;
-			typedef typename Scheduling_problem<Time>::Precedence_constraints Precedence_constraints;
-			typedef typename Scheduling_problem<Time>::Mutex_constraints Mutex_constraints;
-			typedef typename Scheduling_problem<Time>::Abort_actions Abort_actions;
+			using Workload = typename Scheduling_problem<Time>::Workload;
+			using Precedence_constraints = typename Scheduling_problem<Time>::Precedence_constraints;
+			using Mutex_constraints = typename Scheduling_problem<Time>::Mutex_constraints;
+			using Abort_actions = typename Scheduling_problem<Time>::Abort_actions;
 			typedef Schedule_state<Time> State;
 			typedef Schedule_node<Time> Node;
-			typedef std::vector<Interval<Time>> CoreAvailability;
 			typedef const NP::Job<Time>* Job_ref;
-			struct Job_delay {
-				Job_ref reference_job;
-				Interval<Time> delay;
-			};
-			typedef std::vector<Job_delay> Delay_list;
 			typedef std::vector<Job_index> Job_precedence_set;
-
-			struct Inter_job_constraints {
-				// Delay constraints that must be respected between the start of j's predecessors and the start of j
-				// This means j can't start until all jobs in predecessors_start_to_start have started.
-				Delay_list predecessors_start_to_start;
-
-				// Delay constraints that must be respected between the completion of j's predecessors and the start of j
-				// This means j can't start until all jobs in predecessors_finish_to_start have finished.
-				Delay_list predecessors_finish_to_start;
-
-				// Delay constraints that must be respected between the start of j and the start of its successors
-				// This means none of the jobs in start_to_successors_start can start before j starts.
-				Delay_list start_to_successors_start;
-
-				// Delay constraints that must be respected between the completion of j and the start of its successors
-				// This means none of the jobs in finish_to_successors_start can start before j has finished.
-				Delay_list finish_to_successors_start;
-
-				// Delay constraints that must be respected between the start of j and the start of any other job in that list.
-				// There is no ordering constraint. Job j may start before or after the jobs in the list, but the distance between starts must be respected.
-				Delay_list between_starts;
-
-				// Delay constraints that must be respected between the completion of j and the start of any other job in that list, or between the completion of the jobs in the list and the start of j.
-				// There is no ordering constraint. Job j may start before or after the jobs in the list, but the distance between finish and starts of jobs must be respected.
-				Delay_list between_executions;
-			
-				Time get_min_delay_after_start_of(Job_index predecessor) const {
-					for (const auto &pred : predecessors_start_to_start) {
-						if (pred.reference_job->get_job_index() == predecessor) return pred.delay.min();
-					}
-					for (const auto &excl : between_starts) {
-						if (excl.reference_job->get_job_index() == predecessor) return excl.delay.min();
-					}
-					return -1;
-				}
-
-				Time get_min_delay_after_finish_of(Job_index predecessor) const {
-					for (const auto &pred : predecessors_finish_to_start) {
-						if (pred.reference_job->get_job_index() == predecessor) return pred.delay.min();
-					}
-					for (const auto &excl : between_executions) {
-						if (excl.reference_job->get_job_index() == predecessor) return excl.delay.min();
-					}
-					return -1;
-				}
-			};
 
 		private:
 			typedef std::multimap<Time, Job_ref> By_time_map;
@@ -103,7 +50,7 @@ namespace NP {
 			By_time_map _jobs_by_earliest_arrival;
 			By_time_map _jobs_by_deadline;
 			std::vector<Job_precedence_set> _must_be_finished_jobs;
-			std::vector<Inter_job_constraints> _inter_job_constraints;
+			Inter_job_constraints<Time> _inter_job_constraints;
 
 			// list of actions when a job is aborted
 			std::vector<const Abort_action<Time>*> abort_actions;
@@ -127,7 +74,7 @@ namespace NP {
 			const By_time_map& sequential_source_jobs_by_latest_arrival;
 			const By_time_map& gang_source_jobs_by_latest_arrival;
 			const std::vector<Job_precedence_set>& must_be_finished_jobs;
-			const std::vector<Inter_job_constraints>& inter_job_constraints;
+			const Inter_job_constraints<Time>& inter_job_constraints;
 
 			State_space_data(const Workload& jobs,
 				const Precedence_constraints& edges,
@@ -143,67 +90,29 @@ namespace NP {
 				, jobs_by_deadline(_jobs_by_deadline)
 				, _must_be_finished_jobs(jobs.size())
 				, must_be_finished_jobs(_must_be_finished_jobs)
-				, _inter_job_constraints(jobs.size())
+				, _inter_job_constraints(jobs, edges, mutexes)
 				, inter_job_constraints(_inter_job_constraints)
 				, abort_actions(jobs.size(), NULL)
 			{
+				// Add the jobs involved in finish-to-start precedence constraints to the set of jobs 
+				// that must be finished before starting a job
 				for (const auto& e : edges) {
-					if (e.get_type() == start_to_start) {
-						_inter_job_constraints[e.get_fromIndex()].start_to_successors_start.push_back({ &jobs[e.get_toIndex()], e.get_delay() });
-						_inter_job_constraints[e.get_toIndex()].predecessors_start_to_start.push_back({ &jobs[e.get_fromIndex()], e.get_delay() });
-					}
 					if (e.get_type() == finish_to_start) {
-						_inter_job_constraints[e.get_fromIndex()].finish_to_successors_start.push_back({ &jobs[e.get_toIndex()], e.get_delay() });
-						_inter_job_constraints[e.get_toIndex()].predecessors_finish_to_start.push_back({ &jobs[e.get_fromIndex()], e.get_delay() });
 						_must_be_finished_jobs[e.get_toIndex()].push_back(e.get_fromIndex());
 					}
 				}
-
+				// Add the jobs involved in execution exclusion constraints to the set of jobs 
+				// that must be finished before starting a job
 				for (const auto& m : mutexes) {
-					// NOTE: we exclude jobs with delay_max == 0 because the start constraint does not constrain anything then
-					if (m.get_type() == start_exclusion and m.get_max_delay() > 0) {
-						_inter_job_constraints[m.get_jobA_index()].between_starts.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
-						_inter_job_constraints[m.get_jobB_index()].between_starts.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
-					}
 					if (m.get_type() == exec_exclusion) {
-						_inter_job_constraints[m.get_jobA_index()].between_executions.push_back({ &jobs[m.get_jobB_index()], m.get_delay() });
-						_inter_job_constraints[m.get_jobB_index()].between_executions.push_back({ &jobs[m.get_jobA_index()], m.get_delay() });
 						_must_be_finished_jobs[m.get_jobA_index()].push_back(m.get_jobB_index());
 						_must_be_finished_jobs[m.get_jobB_index()].push_back(m.get_jobA_index());
 					}
 				}
-
-				// sort the predecessors and successors suspensions lists by non-increasing priority order
-				for (auto& c : _inter_job_constraints) {					
-					std::sort(c.predecessors_finish_to_start.begin(), c.predecessors_finish_to_start.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-					std::sort(c.finish_to_successors_start.begin(), c.finish_to_successors_start.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-					std::sort(c.predecessors_start_to_start.begin(), c.predecessors_start_to_start.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-					std::sort(c.start_to_successors_start.begin(), c.start_to_successors_start.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-					std::sort(c.between_starts.begin(), c.between_starts.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-					std::sort(c.between_executions.begin(), c.between_executions.end(),
-						[](const Job_delay& a, const Job_delay& b) {
-							return a.reference_job->higher_priority_than(*(b.reference_job));
-						});
-				}
-
+				// Build various job maps for quick access
 				for (const Job<Time>& j : jobs) {
-					const Inter_job_constraints& job_suspensions = _inter_job_constraints[j.get_job_index()];
-					if (job_suspensions.predecessors_finish_to_start.size() > 0 || job_suspensions.predecessors_start_to_start.size() > 0) {
+					const Job_constraints<Time>& job_constraints = _inter_job_constraints[j.get_job_index()];
+					if (job_constraints.predecessors_finish_to_start.size() > 0 || job_constraints.predecessors_start_to_start.size() > 0) {
 						_successor_jobs_by_latest_arrival.insert({ j.latest_arrival(), &j });
 					}
 					else if (j.get_min_parallelism() == 1) {
@@ -216,7 +125,7 @@ namespace NP {
 					}					
 					_jobs_by_deadline.insert({ j.get_deadline(), &j });
 				}
-
+				// Map abort actions to their corresponding jobs
 				for (const Abort_action<Time>& a : aborts) {
 					const Job<Time>& j = lookup<Time>(jobs, a.get_id());
 					abort_actions[j.get_job_index()] = &a;

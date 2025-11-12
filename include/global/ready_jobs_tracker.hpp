@@ -5,12 +5,10 @@
 #include <vector>
 #include "jobs.hpp"
 #include "index_set.hpp"
-#include "global/state_space_data.hpp"
+#include "global/inter_job_constraints.hpp"
 
 namespace NP {
 namespace Global {
-
-template<class Time> class State_space_data;
 
 /**
  * @brief Tracks ready successor jobs (all predecessors completed, not yet dispatched)
@@ -23,8 +21,6 @@ class Ready_jobs_tracker
     typedef Index_set Job_set; 
     typedef const Job<Time>* Job_ref;
 	typedef std::vector<Job_ref> Ready_jobs_list;
-	using Inter_job_constraints = typename State_space_data<Time>::Inter_job_constraints;
-	typedef std::vector<Inter_job_constraints> Constraints;
 
 public:
 	
@@ -56,7 +52,7 @@ public:
 	void update(
 		const Ready_jobs_tracker& from,
 		Job_index dispatched_job,
-		const Constraints& constraints,
+		const Inter_job_constraints<Time>& constraints,
         const Job_set& scheduled_jobs)
 	{
 		const auto& job_constraints = constraints[dispatched_job];
@@ -161,7 +157,7 @@ private:
 	 */
 	bool is_ready(
 		Job_index job_idx,
-		const Constraints& constraints,
+		const Inter_job_constraints<Time>& constraints,
 		const Job_set& scheduled_jobs) const
 	{
 		const auto& job_constraints = constraints[job_idx];

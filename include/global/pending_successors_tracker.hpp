@@ -5,6 +5,7 @@
 #include <vector>
 #include "jobs.hpp"
 #include "index_set.hpp"
+#include "global/inter_job_constraints.hpp"
 
 namespace NP {
 namespace Global {
@@ -24,8 +25,6 @@ class Pending_successors_tracker
 public:
     typedef Index_set Job_set;
     typedef std::vector<Job_index> Pending_jobs_list;
-    using Inter_job_constraints = typename State_space_data<Time>::Inter_job_constraints;
-	typedef std::vector<Inter_job_constraints> Constraints;
     typedef enum {start_constraints, finish_constraints} Constraint_type;
 
     /**
@@ -65,7 +64,7 @@ public:
     void update(
         const Pending_successors_tracker& from,
         Job_index dispatched_job,
-        const Constraints& constraints,
+        const Inter_job_constraints<Time>& constraints,
         const Job_set& scheduled_jobs)
     {
         const auto& job_constraints = constraints[dispatched_job];
@@ -117,7 +116,7 @@ private:
     void update_pending_list(
         const Pending_jobs_list& old_pending,
         Job_index dispatched_job,
-        const Constraints& constraints,
+        const Inter_job_constraints<Time>& constraints,
         Constraint_type constraint_type,
         const Job_set& scheduled_jobs,
         Pending_jobs_list& result)

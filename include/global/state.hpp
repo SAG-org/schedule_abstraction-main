@@ -12,13 +12,14 @@
 #include "jobs.hpp"
 #include "statistics.hpp"
 #include "util.hpp"
-#include "global/state_space_data.hpp"
+#include "problem.hpp"	
 #include "global/core_availability_tracker.hpp"
 #include "global/start_times_tracker.hpp"
 #include "global/finish_times_tracker.hpp"
 #include "global/running_jobs_tracker.hpp"
 #include "global/priority_tracker.hpp"
 #include "global/certain_dispatch_times_tracker.hpp"
+#include "global/inter_job_constraints.hpp"
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 #include "global/extension/state_extension.hpp"
@@ -38,13 +39,10 @@ namespace NP {
 		{
 		private:
 			typedef const Job<Time>* Job_ref;
-			using Workload = typename State_space_data<Time>::Workload;
+			using Workload = typename Scheduling_problem<Time>::Workload;
 			using Core_availability = typename Core_availability_tracker<Time>::Core_availability;
-			using Delay_list = typename NP::Global::State_space_data<Time>::Delay_list;
 			using Running_jobs = typename Running_jobs_tracker<Time>::Running_jobs;
-			using Inter_job_constraints = typename NP::Global::State_space_data<Time>::Inter_job_constraints;
-			typedef std::vector<Inter_job_constraints> Constraints;
-
+			
 			// core availability intervals
 			Core_availability_tracker<Time> core_avail;
 
@@ -275,7 +273,7 @@ namespace NP {
 			 * @param scheduled_jobs The set of jobs that have already been dispatched.
 			 * @return true if j is certainly ready before the first core becomes available.
 			*/
-			bool certainly_ready(Job_ref j, const Constraints& delay_constraints, const Job_set& scheduled_jobs) const
+			bool certainly_ready(Job_ref j, const Inter_job_constraints<Time>& delay_constraints, const Job_set& scheduled_jobs) const
 			{
 				// the job cannot be ready if it is released after the first core becomes available
 				if (j->latest_arrival() > core_availability(1).min())
@@ -400,7 +398,7 @@ namespace NP {
 			 * @param delay The minimum delay between j finished and the first core becomes available
 			 * @return true if j is certainly finished at least delay time units before the first core becomes available
 			 */
-			bool certainly_finished(Job_ref j, Time delay, const Constraints& delay_constraints, const Job_set& scheduled_jobs) const
+			bool certainly_finished(Job_ref j, Time delay, const Inter_job_constraints<Time>& delay_constraints, const Job_set& scheduled_jobs) const
 			{
 				// if there is only one core, then the job is certainly finished if it was dispatched already
 				if (core_avail.num_cores() == 1 && delay == 0)
