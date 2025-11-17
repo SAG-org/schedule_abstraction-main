@@ -9,12 +9,18 @@
 
 namespace NP {
 
+    /**
+     * @brief Conditions used for pruning during state space exploration.
+     *
+     * This structure holds information about which jobs to prune,
+     * specific job sets that trigger stopping conditions
+     */
     struct Pruning_condition
     {
     public:
         Pruning_condition() : time_limit(0) {}
 
-        Pruning_condition(int num_jobs)
+        Pruning_condition(size_t num_jobs)
             : prune_jobs(num_jobs), time_limit(0)
         {
         }

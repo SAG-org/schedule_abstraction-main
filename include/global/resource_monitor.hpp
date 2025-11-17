@@ -29,8 +29,8 @@ public:
 	 * @param max_depth Maximum exploration depth (0 = unlimited)
 	 */
 	Resource_monitor(
-		double max_cpu_time = 0,
-		long max_memory = 0,
+		unsigned long long max_cpu_time = 0,
+		unsigned long long max_memory = 0,
 		unsigned long long max_depth = 0)
 		: max_cpu_time(max_cpu_time)
 		, max_memory(max_memory)
@@ -164,8 +164,8 @@ public:
 	}
 
 private:
-	const double max_cpu_time;  // in seconds
-	const long max_memory;      // in KiB
+	const unsigned long long max_cpu_time;  // in seconds
+	const unsigned long long max_memory;      // in KiB
 	const unsigned long long max_depth;
 	
 	Processor_clock cpu_clock;

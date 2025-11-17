@@ -416,7 +416,7 @@ namespace NP {
 		return jobs;
 	}
 
-	//Functions that help parse the abort actions file
+	//Functions that help parse the job file
 	template<class Time>
 	typename Job<Time>::Job_set parse_yaml_job_file(std::istream& in)
 	{
@@ -449,6 +449,7 @@ namespace NP {
 		return jobs;
 	}
 
+	// Function that helps parse abort actions file
 	template<class Time>
 	Abort_action<Time> parse_abort_action(std::istream& in)
 	{
@@ -563,7 +564,7 @@ namespace NP {
 	}
 
 	template<class Time>
-	Global::Logging_condition<Time> parse_log_config_yaml(std::istream& in, const typename Job<Time>::Job_set& jobset, Global::Dot_file_config& dot_config)
+	Global::Logging_condition<Time> parse_log_config_yaml(std::istream& in, const typename Job<Time>::Job_set& jobset)
 	{		
 		// Default values for logging condition parameters
 		Interval<Time> time_interval(0, Time_model::constants<Time>::infinity());
@@ -663,7 +664,27 @@ namespace NP {
 					deadline_miss = conditions["DeadlineMiss"].as<std::string>() == "yes";
 				}
 			}
+		} catch (const YAML::Exception& e) {
+			std::cerr << "Error reading log configuration YAML file: " << e.what() << std::endl;
+		}
 
+		// Create logging condition with parsed parameters
+		NP::Global::Logging_condition<Time> logging_condition(
+			time_interval, depth_interval, tasks, jobs, dispatched, not_dispatched, deadline_miss);
+
+		return logging_condition;
+	}
+
+	template<class Time>
+	Global::Dot_file_config parse_dot_file_config_yaml(std::istream& in)
+	{		
+		Global::Dot_file_config dot_config;
+		// Clear any flags
+		in.clear();
+		// Move the pointer to the beginning
+		in.seekg(0, std::ios::beg);
+		YAML::Node config = YAML::Load(in);
+		try {
 			// Parse LoggedInfo section
 			if (config["LoggedInfo"]) {
 				YAML::Node logged_info = config["LoggedInfo"];
@@ -700,12 +721,7 @@ namespace NP {
 		} catch (const YAML::Exception& e) {
 			std::cerr << "Error reading log configuration YAML file: " << e.what() << std::endl;
 		}
-
-		// Create logging condition with parsed parameters
-		Global::Logging_condition<Time> logging_condition(
-			time_interval, depth_interval, tasks, jobs, dispatched, not_dispatched, deadline_miss);
-
-		return logging_condition;
+		return dot_config;
 	}
 
 #ifdef CONFIG_PRUNING

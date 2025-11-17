@@ -192,10 +192,10 @@ namespace NP {
 	struct Analysis_options {
 		// After how many seconds of CPU time should we give up?
 		// Zero means unlimited.
-		double timeout;
+		unsigned long long timeout;
 		// Max allowed memory usage
 		// Zero means unlimited.
-		long max_memory = 0; // in KiB
+		unsigned long long max_memory = 0; // in KiB
 
 		// After how many scheduling decisions (i.e., depth of the
 		// schedule graph) should we terminate the analysis?

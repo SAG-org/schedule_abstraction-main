@@ -223,6 +223,16 @@ namespace NP {
 				return resource_monitor.get_cpu_time();
 			}
 
+			unsigned long long get_total_number_of_jobs() const
+			{
+				return (unsigned long long)(state_space_data.jobs.size());
+			}
+
+			unsigned long long get_number_of_jobs_analyzed() const
+			{
+				return (unsigned long long)(current_job_count);
+			}
+
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 			// return the results of a specific analysis extension in a string stream
 			template <typename Extension_type>
@@ -316,8 +326,8 @@ namespace NP {
 				const Problem_extensions& problem_extensions,
 #endif
 				Merge_options merge_options,
-				double max_cpu_time = 0,
-				long max_memory = 0,
+				unsigned long long max_cpu_time = 0,
+				unsigned long long max_memory = 0,
 				unsigned long long max_depth = 0,
 				bool early_exit = true,
 				bool verbose = false

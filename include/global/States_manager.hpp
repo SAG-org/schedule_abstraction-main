@@ -34,13 +34,14 @@ namespace NP {
 			typedef std::shared_ptr<Node> Node_ref;
 			typedef Schedule_state<Time> State;
 			typedef std::shared_ptr<State> State_ref;
+			typedef std::deque<Node_ref> Node_ref_queue;
 #ifdef CONFIG_PARALLEL
 			// Thread-safe concurrent queue for storing nodes during parallel execution
 			typedef tbb::concurrent_queue<Node_ref> Node_refs;
-			typedef tbb::concurrent_unordered_map<hash_value_t, Node_refs> Nodes_map;
+			typedef tbb::concurrent_unordered_map<hash_value_t, Node_ref_queue> Nodes_map;
 #else
 			typedef std::deque<Node_ref> Node_refs;
-			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
+			typedef std::unordered_map<hash_value_t, Node_ref_queue> Nodes_map;
 #endif
 			typedef std::vector<Node_refs> Nodes_storage;
 
@@ -216,11 +217,10 @@ namespace NP {
 			void cache_node(Node_ref n)
 			{
 				// create a new list if needed, or lookup if already existing
-				auto res = nodes_by_key.emplace(
-					std::make_pair(n->get_key(), Node_refs()));
+				auto res = nodes_by_key.emplace(n->get_key(), Node_ref_queue());
 
 				auto pair_it = res.first;
-				Node_refs& list = pair_it->second;
+				auto& list = pair_it->second;
 
 				list.push_front(n);
 			}
