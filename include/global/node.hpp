@@ -134,10 +134,7 @@ namespace NP {
 				const Schedule_node& from,
 				const Job<Time>& j,
 				std::size_t idx,
-				const State_space_data<Time>& state_space_data,
-				const Time next_earliest_release,
-				const Time next_certain_source_job_release, // the next time a job without predecessor is certainly released
-				const Time next_certain_sequential_source_job_release // the next time a job without predecessor that can execute on a single core is certainly released
+				const State_space_data<Time>& state_space_data
 			)
 				: scheduled_jobs{ from.scheduled_jobs, idx }
 				, lookup_key{ from.next_key(j) }
@@ -145,10 +142,10 @@ namespace NP {
 				, num_jobs_scheduled(from.num_jobs_scheduled + 1)
 				, finish_time{ 0, Time_model::constants<Time>::infinity() }
 				, a_max{ Time_model::constants<Time>::infinity() }
-				, earliest_pending_release{ next_earliest_release }
-				, next_certain_source_job_release{ next_certain_source_job_release }
+				, earliest_pending_release{ state_space_data.earliest_possible_job_release(from, j) }
+				, next_certain_source_job_release{ state_space_data.earliest_certain_source_job_release(from, j) }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
-				, next_certain_sequential_source_job_release{ next_certain_sequential_source_job_release }
+				, next_certain_sequential_source_job_release{ state_space_data.earliest_certain_sequential_source_job_release(from, j) }
 				, next_certain_gang_source_job_dispatch{ Time_model::constants<Time>::infinity() }
 			{
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
@@ -212,10 +209,7 @@ namespace NP {
 				const Schedule_node& from,
 				const Job<Time>& j,
 				std::size_t idx,
-				const State_space_data<Time>& state_space_data,
-				const Time next_earliest_release,
-				const Time next_certain_source_job_release, // the next time a job without predecessor is certainly released
-				const Time next_certain_sequential_source_job_release // the next time a job without predecessor that can execute on a single core is certainly released
+				const State_space_data<Time>& state_space_data
 			)
 			{
 #ifdef CONFIG_PARALLEL
@@ -228,10 +222,10 @@ namespace NP {
 				num_jobs_scheduled = from.num_jobs_scheduled + 1;
 				finish_time = { 0, Time_model::constants<Time>::infinity() };
 				a_max = Time_model::constants<Time>::infinity();
-				earliest_pending_release = next_earliest_release;
-				this->next_certain_source_job_release = next_certain_source_job_release;
+				earliest_pending_release = state_space_data.earliest_possible_job_release(from, j);
+				this->next_certain_source_job_release = state_space_data.earliest_certain_source_job_release(from, j);
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
-				this->next_certain_sequential_source_job_release = next_certain_sequential_source_job_release;
+				this->next_certain_sequential_source_job_release = state_space_data.earliest_certain_sequential_source_job_release(from, j);
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
 				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);

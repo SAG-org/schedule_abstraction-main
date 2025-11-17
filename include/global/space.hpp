@@ -265,9 +265,6 @@ namespace NP {
 			typedef const Job<Time>* Job_ref;
 			using Nodes = typename States_manager<Time>::Node_refs;
 
-			// Similar to uni/space.hpp, make Response_times a vector of intervals.
-
-			// typedef std::unordered_map<Job_index, Interval<Time> > Response_times;
 			struct Response_time_item {
 				bool valid;
 				Interval<Time> rt;
@@ -588,7 +585,7 @@ namespace NP {
 								// create a dummy node for explanation purposes
 								auto frange = new_n.get_last_state()->core_availability(pmin) + j.get_cost(pmin);
 								Node_ref next =
-									new_node(1, new_n, j, j.get_job_index(), state_space_data, 0, 0, 0);
+									new_node(1, new_n, j, j.get_job_index(), state_space_data);
 								//const CoreAvailability empty_cav = {};
 								State_ref next_s = new_state(
 										*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(),
@@ -775,7 +772,7 @@ namespace NP {
 
 						// If be_naive, a new node and a new state should be created for each new job dispatch.
 						if (config.be_naive)
-							next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
+							next = new_node(1, *n, j, j.get_job_index(), state_space_data);
 
 						// if we do not have a pointer to a node with the same set of scheduled job yet,
 						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
@@ -784,7 +781,7 @@ namespace NP {
 							next = states_mgr.find_node(n->next_key(j), n->get_scheduled_jobs(), j.get_job_index());
 							// If there is no node yet, create one.
 							if (next == nullptr)
-								next = new_node(1, *n, j, j.get_job_index(), state_space_data, state_space_data.earliest_possible_job_release(*n, j), state_space_data.earliest_certain_source_job_release(*n, j), state_space_data.earliest_certain_sequential_source_job_release(*n, j));
+								next = new_node(1, *n, j, j.get_job_index(), state_space_data);
 						}
 
 						// next should always exist at this point, possibly without states in it
