@@ -34,7 +34,10 @@ namespace NP {
 
 		template<class Time> class State_space_data;
 
-		// NOTE: Schedule_state is not thread-safe. Thread-safety must be enforced by callers.
+		/**
+		 * @brief Represents the state of the schedule at a given point in time. NOTE: Schedule_state is not thread-safe. Thread-safety must be enforced by callers.
+		 * 
+		 */
 		template<class Time> class Schedule_state
 		{
 		private:
@@ -67,7 +70,18 @@ namespace NP {
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
 		public:
-			// initial state -- nothing yet has finished, nothing is running
+			/**
+			 * @brief Construct an initial empty schedule state.
+			 *
+			 * Initializes the state for a system with `num_processors`. No jobs
+			 * have been dispatched or finished. Additional state-space data is
+			 * provided via `state_space_data` to initialize auxiliary trackers
+			 * (e.g., earliest certain gang source release).
+			 *
+			 * @param num_processors Number of processors/cores in the system.
+			 * @param state_space_data Reference to state-space metadata used to
+			 *        initialise various trackers.
+			 */
 			Schedule_state(const unsigned int num_processors, const State_space_data<Time>& state_space_data)
 				: core_avail{ num_processors }
 				, certain_dispatch_times{ state_space_data.get_earliest_certain_gang_source_job_release(),  Time_model::constants<Time>::infinity()}
@@ -80,6 +94,20 @@ namespace NP {
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
+			/**
+			 * @brief Construct an initial state from a given processor availability
+			 *        configuration.
+			 *
+			 * This overload initializes the schedule state using a vector of
+			 * `Interval<Time>` representing the initial availability of the
+			 * processors. Other trackers are initialized using
+			 * `state_space_data` as in the default constructor.
+			 *
+			 * @param proc_initial_state Initial availability intervals for each
+			 *        processor/core.
+			 * @param state_space_data Reference to state-space metadata used to
+			 *        initialise various trackers.
+			 */
 			Schedule_state(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 				: core_avail{ proc_initial_state }
 				, certain_dispatch_times{ state_space_data.get_earliest_certain_gang_source_job_release(),  Time_model::constants<Time>::infinity()}
@@ -92,7 +120,30 @@ namespace NP {
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
-			// transition: new state by scheduling a job 'j' in an existing state 'from'
+			/**
+			 * @brief Construct a new state by applying a dispatch transition.
+			 *
+			 * Creates a new schedule state that results from scheduling job `j`
+			 * on `ncores` starting/finishing within the intervals `start_times`
+			 * and `finish_times`, based on a source state `from`.
+			 *
+			 * @param from The source schedule state before dispatching `j`.
+			 * @param j Index of the job being scheduled.
+			 * @param start_times Interval of possible start times for `j`.
+			 * @param finish_times Interval of possible finish times for `j`.
+			 * @param scheduled_jobs Set of jobs already scheduled in the state.
+			 * @param jobs_with_pending_start_succ Indices of jobs that still have
+			 *        pending start-to-start successors.
+			 * @param jobs_with_pending_finish_succ Indices of jobs that still
+			 *        have pending finish-to-start successors.
+			 * @param ready_succ_jobs Vector of pointers to successor jobs that are
+			 *        currently ready.
+			 * @param state_space_data Reference to state-space metadata (constraints,
+			 *        finished-predecessors mapping, etc.).
+			 * @param next_source_job_rel The next source job release time used to
+			 *        update certain-dispatch trackers.
+			 * @param ncores Number of cores allocated to job `j` (default 1).
+			 */
 			Schedule_state(
 				const Schedule_state& from,
 				Job_index j,
@@ -137,7 +188,18 @@ namespace NP {
 				DM("*** new state: constructed " << *this << std::endl);
 			}
 
-			// initial state -- nothing yet has finished, nothing is running
+			/**
+			 * @brief Reset the state to an initial empty state with given
+			 *        number of processors.
+			 *
+			 * Resets all internal trackers (core availability, running jobs,
+			 * start/finish time trackers, dispatch/priority trackers) to an
+			 * initial configuration for `num_processors` cores.
+			 *
+			 * @param num_processors Number of processors/cores in the system.
+			 * @param state_space_data Reference to state-space metadata used to
+			 *        reinitialise certain trackers.
+			 */
 			void reset(const unsigned int num_processors, const State_space_data<Time>& state_space_data)
 			{
 				core_avail.reset(num_processors);
@@ -153,6 +215,19 @@ namespace NP {
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
+			/**
+			 * @brief Reset the state to an initial configuration using explicit
+			 *        processor availability intervals.
+			 *
+			 * Equivalent to `reset(num_processors, state_space_data)` but allows
+			 * specifying the exact initial availability intervals for the
+			 * processors.
+			 *
+			 * @param proc_initial_state Initial availability intervals for each
+			 *        processor/core.
+			 * @param state_space_data Reference to state-space metadata used to
+			 *        reinitialise certain trackers.
+			 */
 			void reset(const std::vector<Interval<Time>>& proc_initial_state, const State_space_data<Time>& state_space_data)
 			{
 				core_avail.reset(proc_initial_state);
@@ -166,6 +241,33 @@ namespace NP {
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 			}
 
+			/**
+			 * @brief Reset this state by applying the same dispatch transition as
+			 *        the transition-constructor.
+			 *
+			 * Updates this state in-place so it becomes the result of dispatching
+			 * job `j` in `from` with the provided start/finish intervals and
+			 * auxiliary information. This mirrors the non-mutating transition
+			 * constructor but operates by resetting this instance instead of 
+			 * creating a new one.
+			 *
+			 * @param from The source schedule state before dispatching `j`.
+			 * @param j Index of the job being scheduled.
+			 * @param start_times Interval of possible start times for `j`.
+			 * @param finish_times Interval of possible finish times for `j`.
+			 * @param scheduled_jobs Set of jobs already scheduled in the state.
+			 * @param jobs_with_pending_start_succ Indices of jobs that still have
+			 *        pending start-to-start successors.
+			 * @param jobs_with_pending_finish_succ Indices of jobs that still
+			 *        have pending finish-to-start successors.
+			 * @param ready_succ_jobs Vector of pointers to successor jobs that are
+			 *        currently ready.
+			 * @param state_space_data Reference to state-space metadata (constraints,
+			 *        finished-predecessors mapping, etc.).
+			 * @param next_source_job_rel The next source job release time used to
+			 *        update certain-dispatch trackers.
+			 * @param ncores Number of cores allocated to job `j` (default 1).
+			 */
 			void reset(
 				const Schedule_state& from,
 				Job_index j,
@@ -210,68 +312,145 @@ namespace NP {
 			}
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
+			/**
+			 * @brief Accessor for optional state extensions.
+			 *
+			 * Returns the collection of additional state extensions when the
+			 * `CONFIG_ANALYSIS_EXTENSIONS` build option is enabled. These
+			 * extensions can carry analysis-specific auxiliary data.
+			 */
 			const State_extensions<Time>& get_extensions() const
 			{
 				return extensions;
 			}
 #endif // CONFIG_ANALYSIS_EXTENSIONS
 
+			/**
+			 * @brief Get the full core availability structure.
+			 *
+			 * Returns a reference to the internal representation of the
+			 * availability intervals for all cores.
+			 *
+			 * @return Reference to availability intervals.
+			 */
 			const Core_availability& get_cores_availability() const
 			{
 				return core_avail.get_all_intervals();
 			}
 
+			/**
+			 * @brief Get the availability interval for the p-th core to become
+			 *        available.
+			 *
+			 * @param p The number of the core availability to query (1 = first
+			 *        available core).
+			 * @return Time interval when the p-th core is available.
+			 */
 			Interval<Time> core_availability(unsigned long p = 1) const
 			{
 				return core_avail.get_availability(p);
 			}
 
+			/**
+			 * @brief Return the earliest time any core becomes available.
+			 *
+			 * @return The earliest availability time across all cores.
+			 */
 			Time earliest_core_availability() const
 			{
 				return core_avail.earliest_availability();
 			}
 
-			// return true if the finish time interval of the job `j` is known. If so, it writes the finish time interval in `ftimes` 
+			/**
+			 * @brief Query the finish-time interval for a dispatched job.
+			 *
+			 * If the finish time interval for job `j` is known (i.e., recorded
+			 * in the finish-time tracker), this writes it into `ftimes` and
+			 * returns true. Otherwise returns false.
+			 *
+			 * @param j Job index to query.
+			 * @param ftimes Output parameter to receive the finish interval.
+			 * @return true if an interval was found and written to `ftimes`.
+			 */
 			bool get_finish_times(Job_index j, Interval<Time>& ftimes) const
 			{
 				return job_finish_times.get(j, ftimes);
 			}
 
+			/**
+			 * @brief Return a pointer to the job with minimum priority among the
+			 *        jobs that can be dispatched next.
+			 *
+			 * @return Job_ref Pointer to the minimum-priority ready job or nullptr
+			 *         if none is available.
+			 */
 			Job_ref get_next_dispatched_job_min_priority() const
 			{
 				return min_next_prio_job.get_min_priority_job();
 			}
 
+			/**
+			 * @brief Query the start-time interval for a dispatched job.
+			 *
+			 * If the start time interval for job `j` is known (i.e., recorded
+			 * in the start-time tracker), this writes it into `stimes` and
+			 * returns true. Otherwise returns false.
+			 *
+			 * @param j Job index to query.
+			 * @param stimes Output parameter to receive the start interval.
+			 * @return true if an interval was found and written to `stimes`.
+			 */
 			bool get_start_times(Job_index j, Interval<Time>& stimes) const
 			{
 				return job_start_times.get(j, stimes);
 			}
 
+			/**
+			 * @brief Get earliest time at which a gang source job is certainly
+			 *        dispatchable.
+			 *
+			 * @return The earliest certain dispatch time for gang source jobs.
+			 */
 			Time next_certain_gang_source_job_dispatch() const
 			{
 				return certain_dispatch_times.get_gang_source_dispatch_time();
 			}
 
+			/**
+			 * @brief Get earliest time at which successor jobs are certainly
+			 *        dispatchable.
+			 *
+			 * @return The earliest certain dispatch time for successor jobs.
+			 */
 			Time next_certain_successor_jobs_dispatch() const
 			{
 				return certain_dispatch_times.get_successor_dispatch_time();
 			}
 
+			/**
+			 * @brief Access the set of certainly running jobs.
+			 *
+			 * Returns the internal representation of imprecisely-known running
+			 * jobs including their parallelism and finish intervals.
+			 *
+			 * @return Reference to the certainly-running jobs.
+			 */
 			const Running_jobs& get_cert_running_jobs() const
 			{
 				return certain_running_jobs.get_running_jobs();
 			}
 
 			/**
-			 * @brief Check if a job was certainly ready before the first core becomes available.
+			 * @brief Determine whether job `j` is certainly ready before the
+			 *        first core becomes available.
 			 * 
 			 * This method checks if the job j is certainly arrived and all its predecedence and mutual exclusion constraints 
 			 * are certainly fulfilled before the first core becomes available.
 			 * 
 			 * @param j The job to check.
 			 * @param delay_constraints The inter-job constraints.
-			 * @param scheduled_jobs The set of jobs that have already been dispatched.
-			 * @return true if j is certainly ready before the first core becomes available.
+			 * @param scheduled_jobs The set of jobs that have already been dispatched in the state.
+			 * @return true if j is certainly ready before the first core becomes available, false otherwise.
 			*/
 			bool certainly_ready(Job_ref j, const Inter_job_constraints<Time>& delay_constraints, const Job_set& scheduled_jobs) const
 			{
@@ -305,7 +484,22 @@ namespace NP {
 				return true;
 			}
 
-			// check if 'other' state can merge with this state
+			/**
+			 * @brief Test whether `other` schedule state can be merged with this
+			 *        state.
+			 *
+			 * The merging criteria are based primarily on core availability
+			 * overlap. If `use_job_times == true` the method additionally
+			 * requires compatible job start/finish times to overlap. The
+			 * `conservative` flag controls whether strict containment semantics are
+			 * applied.
+			 *
+			 * @param other The other state to test for mergeability.
+			 * @param conservative If true, perform a conservative overlap test.
+			 * @param use_job_times If true, require tracked job start/finish times
+			 *        to also overlap.
+			 * @return true if the two states can be merged, false otherwise.
+			 */
 			bool can_merge_with(const Schedule_state<Time>& other, bool conservative, bool use_job_times = false) const
 			{
 				bool other_in_this;
@@ -320,7 +514,19 @@ namespace NP {
 					return false;
 			}
 
-			// first check if 'other' state can merge with this state, then, if yes, merge 'other' with this state.
+			/**
+			 * @brief Attempt to merge `other` into this state in-place.
+			 *
+			 * First checks mergeability via `can_merge_with`. If the states can
+			 * be merged, performs the in-place merge of all internal trackers
+			 * and returns true.
+			 *
+			 * @param other The other state to merge into this one.
+			 * @param conservative If true, use conservative overlap semantics.
+			 * @param use_job_times If true, require tracked job start/finish times
+			 *        to also overlap.
+			 * @return true if the merge was performed, false otherwise.
+			 */
 			bool try_to_merge(const Schedule_state<Time>& other, bool conservative, bool use_job_times = false)
 			{
 				if (!can_merge_with(other, conservative, use_job_times))
@@ -332,6 +538,16 @@ namespace NP {
 				return true;
 			}
 
+			/**
+			 * @brief Merge external tracker views into this state.
+			 *
+			 * @param cav Core availability tracker to merge.
+			 * @param jst Start-times tracker to merge.
+			 * @param jft Finish-times tracker to merge.
+			 * @param cert_j Running-jobs tracker to merge.
+			 * @param cert_disp Certain-dispatch times tracker to merge.
+			 * @param min_p_next_job Priority tracker for next-job to merge.
+			 */
 			void merge(
 				const Core_availability_tracker<Time>& cav,
 				const Start_times_tracker<Time>& jst,
@@ -355,7 +571,18 @@ namespace NP {
 				DM("+++ merged (cav,jft,cert_t) into " << *this << std::endl);
 			}
 
-			// output the state in CSV format
+			/**
+			 * @brief Export the state in a human-readable CSV-like form.
+			 *
+			 * Writes internal information (core availability intervals, certainly
+			 * running jobs, stored start/finish times for predecessors, etc.)
+			 * to the provided output stream. Intended for debugging and
+			 * SAG exports.
+			 *
+			 * @param stream Output stream to write the state to.
+			 * @param jobs The workload (job vector) used to resolve task/job ids
+			 *        for human-friendly output.
+			 */
 			void export_state (std::ostream& stream, const Workload& jobs)
 			{
 				stream << "=====State=====\n"
@@ -393,10 +620,17 @@ namespace NP {
 		private:
 
 			/**
-			 * @brief Check if a job was certainly finished at least delay time units before the first core becomes available.
-			 * @param j The job to check (assumed to be dispatched)
-			 * @param delay The minimum delay between j finished and the first core becomes available
-			 * @return true if j is certainly finished at least delay time units before the first core becomes available
+			 * @brief Check whether a dispatched job was certainly finished at
+			 *        least `delay` time units before the first core becomes
+			 *        available.
+			 *
+			 * @param j Pointer to the dispatched job to check (assumed to be dispatched. No additional check performed).
+			 * @param delay Required time separation between finish of `j` and
+			 *        the first core availability.
+			 * @param delay_constraints Inter-job constraint structure.
+			 * @param scheduled_jobs Set of jobs already scheduled in the state.
+			 * @return true if `j` certainly finished at least `delay` before the
+			 *         earliest available core, false otherwise.
 			 */
 			bool certainly_finished(Job_ref j, Time delay, const Inter_job_constraints<Time>& delay_constraints, const Job_set& scheduled_jobs) const
 			{
@@ -432,6 +666,17 @@ namespace NP {
 			 * @param j The job to check (assumed to be dispatched)
 			 * @param delay The minimum delay between j started and the first core becomes available
 			 */
+			/**
+			 * @brief Check whether a dispatched job was certainly started at
+			 *        least `delay` time units before the first core becomes
+			 *        available.
+
+			 * @param j Pointer to the dispatched job to check (assumed to be dispatched. No additional check performed).
+			 * @param delay Required time separation between start of `j` and the
+			 *        first core availability.
+			 * @return true if `j` certainly started at least `delay` before the
+			 *         earliest available core, false otherwise.
+			 */
 			bool certainly_started(Job_ref j, Time delay) const
 			{
 				// if the job is certainly dispatched, then it is certainly started too
@@ -449,7 +694,11 @@ namespace NP {
 				return false;
 			}
 
-			// no accidental copies
+			/**
+			 * @brief Deleted copy constructor.
+			 *
+			 * Copying schedule states is disallowed.
+			 */
 			Schedule_state(const Schedule_state& origin) = delete;
 		};
 	}

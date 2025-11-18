@@ -60,8 +60,8 @@ TEST_CASE("state space") {
 
 	NP::Global::Schedule_node<dtime_t> n0{1};
 
-	CHECK(n0.finish_range().from() == 0);
-	CHECK(n0.finish_range().until() == 0);
+	CHECK(n0.earliest_core_availability() == 0);
+	CHECK(n0.latest_core_availability() == 0);
 
 	Job<dtime_t> j1{10, Interval<dtime_t>(0, 0), Interval<dtime_t>(3, 13), 60, 60, 0};
 
