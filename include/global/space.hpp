@@ -996,7 +996,7 @@ namespace NP {
 				
 				if (config.verbose) {
 					std::cout << "0%; 0s";
-					target_depth = std::max(sp_data.num_jobs(), config.max_depth);
+					target_depth = std::max((unsigned long long)sp_data.num_jobs(), config.max_depth);
 				}
 				
 				unsigned long long last_num_states = statistics.get_num_states();
