@@ -65,12 +65,10 @@ namespace NP {
 			{
 				assert(depth < nodes_storage.size());
 				auto n = node_pool.acquire(std::forward<Args>(args)...);
+				assert(n);
 #ifdef CONFIG_PARALLEL
-                // Only push into storage if we successfully acquired a node
-                assert(n);
 				nodes_storage[depth].push(n);
 #else
-				assert(n);
 				nodes_storage[depth].push_back(n);
 #endif
 				cache_node(n);
@@ -95,8 +93,7 @@ namespace NP {
 			void release_node(const Node_ref& n)
 			{
 				assert(n);
-				if (n)
-					node_pool.release(n);
+				node_pool.release(n);
 			}
 
 			/**
@@ -106,8 +103,7 @@ namespace NP {
 			void release_state(const State_ref& s)
 			{
 				assert(s);
-				if (s)
-					state_pool.release(s);
+				state_pool.release(s);
 			}
 
 			Node_refs& get_nodes_at_depth(unsigned int depth)

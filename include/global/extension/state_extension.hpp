@@ -94,8 +94,7 @@ namespace NP {
 			virtual void merge(size_t extension_id, const Schedule_state<Time>& this_state, const Schedule_state<Time>& other) {}
 		};
 
-		// Registry for State_extension types - holds creators and mappings
-		// Owned by State_space_data or similar owning class
+		// Registry for State_extension types - holds creators for each registered extension
 		template<class Time>
 		class State_extension_registry {
 		public:

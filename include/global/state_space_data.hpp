@@ -43,13 +43,16 @@ namespace NP {
 		private:
 			typedef std::multimap<Time, Job_ref> By_time_map;
 
+			// various job maps sorted by time for quick access
 			// not touched after initialization
 			By_time_map _successor_jobs_by_latest_arrival;
 			By_time_map _sequential_source_jobs_by_latest_arrival;
 			By_time_map _gang_source_jobs_by_latest_arrival;
 			By_time_map _jobs_by_earliest_arrival;
 			By_time_map _jobs_by_deadline;
+			// for each job, the set of jobs that must be finished before starting it
 			std::vector<Job_precedence_set> _must_be_finished_jobs;
+			// inter-job constraints for all jobs in the workload
 			Inter_job_constraints<Time> _inter_job_constraints;
 
 			// list of actions when a job is aborted
@@ -76,6 +79,17 @@ namespace NP {
 			const std::vector<Job_precedence_set>& must_be_finished_jobs;
 			const Inter_job_constraints<Time>& inter_job_constraints;
 
+			/**
+			 * @brief Construct state-space metadata from the scheduling problem definition.
+			 * 
+			 * Initializes various job maps and constraints used during state-space exploration.
+			 * 
+			 * @param jobs The set of jobs in the workload.
+			 * @param edges The precedence constraints between jobs.
+			 * @param aborts The abort actions associated with jobs.
+			 * @param mutexes The mutual exclusion constraints between jobs.
+			 * @param num_cpus Number of processors/cores in the system.
+			 */
 			State_space_data(const Workload& jobs,
 				const Precedence_constraints& edges,
 				const Abort_actions& aborts,
@@ -133,16 +147,19 @@ namespace NP {
 			}
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
+			/** @brief Get a const reference to the state space data extensions */
 			const State_space_data_extensions<Time>& get_extensions() const
 			{
 				return extensions;
 			}
 
+			/** @brief Get a reference to the state space data extensions */
 			State_space_data_extensions<Time>& get_extensions()
 			{
 				return extensions;
 			}
 
+			/** @brief Get a const reference to the state extension registry */
 			const State_extension_registry<Time>& get_state_extension_registry() const
 			{
 				return state_extension_registry;
@@ -153,35 +170,46 @@ namespace NP {
 				return state_extension_registry;
 			}
 #endif // CONFIG_ANALYSIS_EXTENSIONS
-
+			
+			/** @brief Get the number of processors/cores in the system */
 			size_t get_num_cpus() const
 			{
 				return num_cpus;
 			}
 
+			/** @brief Get the number of jobs in the workload */
 			size_t num_jobs() const
 			{
 				return jobs.size();
 			}
 
+			/** 
+			 * @brief Get the set of jobs that must be finished before starting job j
+			 * @param j index of the job to query
+			 * @return set of job indices that must be finished before starting job j
+			 */
 			const Job_precedence_set& get_finished_jobs_if_starts(Job_index j) const
 			{
 				return must_be_finished_jobs[j];
 			}
-
+			
+			/** @brief Get the abort action associated with job j */
 			const Abort_action<Time>* abort_action_of(Job_index j) const
 			{
 				return abort_actions[j];
 			}
 
-			// returns the ready time interval of `j` in `s`
-			// assumes all predecessors of j are dispatched
+			/**
+			 * @brief Compute the ready time interval of job j in state s within node n. 
+			 * NOTE: Assumes all predecessors of j are already dispatched.
+			 */
 			Interval<Time> ready_times(const Node& n, const State& s, const Job<Time>& j) const
 			{
 				Interval<Time> r = j.arrival_window();
 				const auto& cstr = inter_job_constraints[j.get_job_index()];
 				for (const auto& pred : cstr.predecessors_start_to_start)
 				{
+					assert(dispatched(n, *pred.reference_job)); // function should not be called if a predecessor is not dispatched yet
 					Interval<Time> st{ 0, 0 };
 					s.get_start_times(pred.reference_job->get_job_index(), st);
 					r.lower_bound(st.min() + pred.delay.min());
@@ -198,6 +226,7 @@ namespace NP {
 				}
 				for (const auto& pred : cstr.predecessors_finish_to_start)
 				{
+					assert(dispatched(n, *pred.reference_job)); // function should not be called if a predecessor is not dispatched yet
 					Interval<Time> ft{ 0, 0 };
 					s.get_finish_times(pred.reference_job->get_job_index(), ft);
 					r.lower_bound(ft.min() + pred.delay.min());
@@ -215,30 +244,30 @@ namespace NP {
 				return r;
 			}
 
-			// Assume: `j` is already dispatched
-			// return: true if `j` is certainly finished when the first core becomes available, false otherwise
+			/**
+			 * @brief Check whether job j is certainly finished when the first core becomes available in state s within node n. 
+			 * NOTE: Assumes that job j is already dispatched with its finish time within the interval finish_time.
+			*/
 			bool is_certainly_finished(const Node& n, const State& s, const Job_index j, const Interval<Time>& finish_time) const
 			{
-				// If there is a single core, `j` must have finished when the core becomes available,
-				// since we assumed that `j` was already dispatched.
+				// job j must be already dispatched
+				assert(n.job_dispatched(j));
+				// If there is a single core, `j` there is a single core on which can run. 
+				// Thus, `j` must have finished its execution when the first and only core becomes available.
 				if (num_cpus == 1) 
 					return true;
 
-				// The optimization above can be generalized to multiple cores, using the following knowledge:
-				// We will prove the following claim: (ft(j) denotes the finish time of j and ca(n) denotes core_availability(n))
+				// The optimization above can be generalized to multiple cores, as follows (ft(j) denotes
+				// the finish time of j and ca(n) denotes core_availability(n)):
 				// If ft(j).max() < ca(2).min() then no core can be available before j is finished.
 				// Proof:
-				// (A) Assume for a contradiction that a core becomes available at time T before j is finished at time F > T.
-				//
+				// (A) Assume by contradiction that a core becomes available at time T before j is finished at time F > T.
 				// (B) Since a core became available at time T, it must hold that ca(1).min <= T <= ca(1).max().
-				//
 				// (C) Since j finishes at time F > T, we know that at least 2 cores must be available at time F:
 				//     - the one that became available at time T, and
 				//     - the one used by j
-				//
 				// (D) So ca(2).min() <= F <= ft(j).max() hence ca(2).min() <= ft(j).max().
-				//
-				// (E) this yields a contradiction with the condition ft(j).max() < ca(2).min().
+				// (E) this yields a contradiction with the assumption that ft(j).max() < ca(2).min().
 				if (finish_time.max() < s.core_availability(2).min())
 					return true; // by the proof above j is certainly finished when the first core becomes available
 
@@ -247,7 +276,7 @@ namespace NP {
 					if (dispatched(n, *s.reference_job))
 						return true;
 				}
-
+				// Else there is no guarantee that j is finished before the first core becomes available.
 				return false;
 			}
 
@@ -384,8 +413,10 @@ namespace NP {
 				return latest_ready_high;
 			}
 
-			// returns the earliest time at which `j` may become ready in `s`
-			// assumes all predecessors of `j` are completed
+			/**
+			 * @brief Compute the earliest ready time of job j in state s within node n. 
+			 * NOTE: Assumes all predecessors of j are already dispatched.
+			 */
 			Time earliest_ready_time(const Node& n, const State& s, const Job<Time>& j) const
 			{
 				return ready_times(n, s, j).min();
@@ -519,92 +550,76 @@ namespace NP {
 				return latest_ready_high;
 			}
 
-			// Find the earliest possible job release of all jobs in a node except for the ignored job
-			Time earliest_possible_job_release(
-				const Node& n,
-				const Job<Time>& ignored_job) const
+			/**
+			 * @brief Find the earliest possible job release of all jobs at or after time 'after'
+			 * @param after time after which to search for the earliest possible job release
+			 * @param n the node in which to search
+			 */
+			Time earliest_possible_job_release(Time after, const Node& n) const
 			{
-				DM("      - looking for earliest possible job release starting from: "
-					<< n.earliest_job_release() << std::endl);
-
-				for (auto it = jobs_by_earliest_arrival.lower_bound(n.earliest_job_release());
+				for (auto it = jobs_by_earliest_arrival.lower_bound(after);
 					it != jobs_by_earliest_arrival.end(); 	it++)
 				{
 					const Job<Time>& j = *(it->second);
-
-					DM("         * looking at " << j << std::endl);
-
-					// skip if it is the one we're ignoring or if it was dispatched already
-					if (&j == &ignored_job || dispatched(n, j))
+					// skip if it is dispatched already
+					if (dispatched(n, j))
 						continue;
-
-					DM("         * found it: " << j.earliest_arrival() << std::endl);
-					// it's incomplete and not ignored => found the earliest
+					// the job was not dispatched yet => found the earliest since jobs are ordered by earliest arrival
 					return j.earliest_arrival();
 				}
-
-				DM("         * No more future releases" << std::endl);
+				// no more jobs => return infinity
 				return Time_model::constants<Time>::infinity();
 			}
 
-			// Find the earliest certain job release of all sequential source jobs 
-			// (i.e., without predecessors and with minimum parallelism = 1) 
-			// in a node except for the ignored job
-			Time earliest_certain_sequential_source_job_release(
-				const Node& n,
-				const Job<Time>& ignored_job) const
+			/**
+			 * @brief Find the earliest certain job release of all sequential source jobs 
+			 * (i.e., without predecessors and with minimum parallelism = 1) 
+			 * at or after time 'after'
+			 * @param after time after which to search for the earliest certain sequential source job release
+			 * @param n the node in which to search
+			 */
+			Time earliest_certain_sequential_source_job_release(Time after, const Node& n) const
 			{
-				DM("      - looking for earliest certain source job release starting from: "
-					<< n.get_next_certain_source_job_release() << std::endl);
-
-				for (auto it = sequential_source_jobs_by_latest_arrival.lower_bound(n.get_next_certain_source_job_release());
+				for (auto it = sequential_source_jobs_by_latest_arrival.lower_bound(after);
 					it != sequential_source_jobs_by_latest_arrival.end(); it++)
 				{
 					const Job<Time>* jp = it->second;
-					DM("         * looking at " << *jp << std::endl);
-
-					// skip if it is the one we're ignoring or the job was dispatched already
-					if (jp == &ignored_job || dispatched(n, *jp))
+					// skip if the job was dispatched already
+					if (dispatched(n, *jp))
 						continue;
-
-					DM("         * found it: " << jp->latest_arrival() << std::endl);
-					// it's incomplete and not ignored => found the earliest
+					// the job was not dispatched yet => found the earliest since jobs are ordered by latest arrival 
 					return jp->latest_arrival();
 				}
-				DM("         * No more future source job releases" << std::endl);
+				// no more sequential source jobs => return infinity
 				return Time_model::constants<Time>::infinity();
 			}
 
-			// Find the earliest certain job release of all source jobs (i.e., without predecessors) 
-			// in a node except for the ignored job
-			Time earliest_certain_source_job_release(
-				const Node& n,
-				const Job<Time>& ignored_job) const
+			/** 
+			 * @brief Find the earliest certain gang source job release of all source jobs 
+			 * at or after time 'after'
+			 * @param after time after which to search for the earliest certain gang source job release
+			 * @param n the node in which to search
+			 */
+			Time earliest_certain_gang_source_job_release(Time after, const Node& n) const
 			{
-				DM("      - looking for earliest certain source job release starting from: "
-					<< n.get_next_certain_source_job_release() << std::endl);
-
-				Time rmax = earliest_certain_sequential_source_job_release(n, ignored_job);
-
-				for (auto it = gang_source_jobs_by_latest_arrival.lower_bound(n.get_next_certain_source_job_release());
+				for (auto it = gang_source_jobs_by_latest_arrival.lower_bound(after);
 					it != gang_source_jobs_by_latest_arrival.end(); it++)
 				{
 					const Job<Time>* jp = it->second;
-					DM("         * looking at " << *jp << std::endl);
-
-					// skip if it is the one we're ignoring or the job was dispatched already
-					if (jp == &ignored_job || dispatched(n, *jp))
+					// skip if the job was dispatched already
+					if (dispatched(n, *jp))
 						continue;
-
-					DM("         * found it: " << jp->latest_arrival() << std::endl);
-					// it's incomplete and not ignored => found the earliest
-					return std::min(rmax, jp->latest_arrival());
+					// the job was not dispatched yet => found the earliest since jobs are ordered by latest arrival
+					return jp->latest_arrival();
 				}
-
-				DM("         * No more future releases" << std::endl);
-				return rmax;
+				return Time_model::constants<Time>::infinity();
 			}
 
+			/** 
+			 * @brief Return the earliest possible job arrival of all jobs when the system starts 
+			 * NOTE: ignores successor jobs because they cannot be ready before their predecessors 
+			 * are released, hence successor jobs' releases are lower bounded by those of the source jobs
+			 */
 			Time get_earliest_job_arrival() const
 			{
 				if (jobs_by_earliest_arrival.empty())
@@ -613,9 +628,9 @@ namespace NP {
 					return jobs_by_earliest_arrival.begin()->first;
 			}
 
-			// Find the earliest certain job release of all sequential source jobs
-			// (i.e., without predecessors and with minimum parallelism = 1) when
-			// the system starts
+			/**
+			 * @brief Get the earliest certain release time among all **sequential** *source* jobs when the system starts.
+			 */
 			Time get_earliest_certain_seq_source_job_release() const
 			{
 				if (sequential_source_jobs_by_latest_arrival.empty())
@@ -624,9 +639,9 @@ namespace NP {
 					return sequential_source_jobs_by_latest_arrival.begin()->first;
 			}
 
-			// Find the earliest certain job release of all gang source jobs
-			// (i.e., without predecessors and with possible parallelism > 1) when
-			// the system starts
+			/**
+			 * @brief Get the earliest certain release time among all **gang** *source* jobs when the system starts.
+			 */
 			Time get_earliest_certain_gang_source_job_release() const
 			{
 				if (gang_source_jobs_by_latest_arrival.empty())
@@ -639,7 +654,7 @@ namespace NP {
 
 			bool not_dispatched(const Node& n, const Job<Time>& j) const
 			{
-				return n.job_not_dispatched(j.get_job_index());
+				return not n.job_dispatched(j.get_job_index());
 			}
 
 			bool dispatched(const Node& n, const Job<Time>& j) const

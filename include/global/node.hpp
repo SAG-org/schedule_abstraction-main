@@ -50,7 +50,7 @@ namespace NP {
 			// Help quickly decide which jobs can be dispatched next without inspecting 
 			// each state individually or recomputing the same data multiple times.
 			/** Earliest time at which any pending (not-yet-dispatched) job may arrive. */
-			Time earliest_pending_release;
+			Time earliest_potential_release;
 			/** Next time when a successor job is certainly dispatchable across all states. */
 			Time next_certain_successor_jobs_dispatch;
 			/** Next time for any source job (either sequential or gang) is certainly released. */
@@ -111,7 +111,7 @@ namespace NP {
 				, a_min{ 0 }
 				, a_max{ 0 }
 				, num_jobs_scheduled(0)
-				, earliest_pending_release{ 0 }
+				, earliest_potential_release{ 0 }
 				, next_certain_source_job_release{ Time_model::constants<Time>::infinity() }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ Time_model::constants<Time>::infinity() }
@@ -130,7 +130,7 @@ namespace NP {
 				, a_min{ 0 }
 				, a_max{ 0 }
 				, num_jobs_scheduled(0)
-				, earliest_pending_release{ state_space_data.get_earliest_job_arrival() }
+				, earliest_potential_release{ state_space_data.get_earliest_job_arrival() }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ state_space_data.get_earliest_certain_seq_source_job_release() }
 				, next_certain_gang_source_job_dispatch{ Time_model::constants<Time>::infinity() }
@@ -149,7 +149,7 @@ namespace NP {
 				, a_min{ Time_model::constants<Time>::infinity() }
 				, a_max{ 0 }
 				, num_jobs_scheduled(0)
-				, earliest_pending_release{ state_space_data.get_earliest_job_arrival() }
+				, earliest_potential_release{ state_space_data.get_earliest_job_arrival() }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
 				, next_certain_sequential_source_job_release{ state_space_data.get_earliest_certain_seq_source_job_release() }
 				, next_certain_gang_source_job_dispatch{ Time_model::constants<Time>::infinity() }
@@ -182,12 +182,13 @@ namespace NP {
 				, num_jobs_scheduled(from.num_jobs_scheduled + 1)
 				, a_min{ 0 }
 				, a_max{ Time_model::constants<Time>::infinity() }
-				, earliest_pending_release{ state_space_data.earliest_possible_job_release(from, j) }
-				, next_certain_source_job_release{ state_space_data.earliest_certain_source_job_release(from, j) }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
-				, next_certain_sequential_source_job_release{ state_space_data.earliest_certain_sequential_source_job_release(from, j) }
 				, next_certain_gang_source_job_dispatch{ Time_model::constants<Time>::infinity() }
 			{
+				earliest_potential_release = state_space_data.earliest_possible_job_release(from.earliest_potential_release, *this);
+				next_certain_sequential_source_job_release = state_space_data.earliest_certain_sequential_source_job_release(from.next_certain_sequential_source_job_release, *this);
+				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, 
+					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
 				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
@@ -219,7 +220,7 @@ namespace NP {
 				num_jobs_scheduled = 0;
 				ready_successor_jobs.clear();
 				jobs_with_pending_successors.clear();
-				earliest_pending_release = state_space_data.get_earliest_job_arrival();
+				earliest_potential_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
@@ -246,7 +247,7 @@ namespace NP {
 				num_jobs_scheduled = 0;
 				ready_successor_jobs.clear();
 				jobs_with_pending_successors.clear();
-				earliest_pending_release = state_space_data.get_earliest_job_arrival();
+				earliest_potential_release = state_space_data.get_earliest_job_arrival();
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
 				next_certain_sequential_source_job_release = state_space_data.get_earliest_certain_seq_source_job_release();
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
@@ -277,10 +278,11 @@ namespace NP {
 				num_jobs_scheduled = from.num_jobs_scheduled + 1;
 				a_min = 0;
 				a_max = Time_model::constants<Time>::infinity();
-				earliest_pending_release = state_space_data.earliest_possible_job_release(from, j);
-				this->next_certain_source_job_release = state_space_data.earliest_certain_source_job_release(from, j);
+				earliest_potential_release = state_space_data.earliest_possible_job_release(from.earliest_potential_release, *this);
 				next_certain_successor_jobs_dispatch = Time_model::constants<Time>::infinity();
-				this->next_certain_sequential_source_job_release = state_space_data.earliest_certain_sequential_source_job_release(from, j);
+				next_certain_sequential_source_job_release = state_space_data.earliest_certain_sequential_source_job_release(from.next_certain_sequential_source_job_release, *this);
+				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, 
+					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
 				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
@@ -298,7 +300,7 @@ namespace NP {
 			/** @brief Return earliest pending job release time (across all contained states). */
 			Time earliest_job_release() const
 			{
-				return earliest_pending_release;
+				return earliest_potential_release;
 			}
 
 			/** @brief Next certain source job release time (either gang or sequential). */
@@ -353,16 +355,6 @@ namespace NP {
 			const Job_set& get_scheduled_jobs() const
 			{
 				return scheduled_jobs;
-			}
-
-			/**
-			 * @brief Check whether job j has not been dispatched until reaching this node.
-			 * @param j job index to query
-			 * @return true if job j is not dispatched yet
-			 */
-			const bool job_not_dispatched(Job_index j) const
-			{
-				return !scheduled_jobs.contains(j);
 			}
 
 			/**

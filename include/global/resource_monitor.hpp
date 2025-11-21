@@ -75,12 +75,14 @@ public:
 	
 	/**
 	 * @brief Check if CPU time limit has been exceeded.
+	 * @param[out] cpu_time Current CPU time in seconds
 	 * 
 	 * @return true if timeout occurred, false otherwise
 	 */
-	bool check_timeout()
+	bool check_timeout(double& cpu_time)
 	{
-		if (max_cpu_time > 0 && get_cpu_time() > max_cpu_time) {
+		cpu_time = get_cpu_time();
+		if (max_cpu_time > 0 && cpu_time > max_cpu_time) {
 			timed_out = true;
 			return true;
 		}
@@ -89,12 +91,14 @@ public:
 	
 	/**
 	 * @brief Check if memory limit has been exceeded.
+	 * @param[out] mem_usage Current memory usage in KiB
 	 * 
 	 * @return true if out of memory, false otherwise
 	 */
-	bool check_out_of_memory()
+	bool check_out_of_memory(long& mem_usage)
 	{
-		if (max_memory > 0 && get_memory_usage() > max_memory) {
+		mem_usage = get_memory_usage();
+		if (max_memory > 0 && mem_usage > max_memory) {
 			out_of_memory = true;
 			return true;
 		}
@@ -124,8 +128,10 @@ public:
 	 */
 	bool should_abort(unsigned int current_depth)
 	{
-		return check_timeout() || 
-		       check_out_of_memory() ||
+		long mem_usage;
+		double cpu_time;
+		return check_timeout(cpu_time) || 
+		       check_out_of_memory(mem_usage) ||
 		       check_depth(current_depth);
 	}
 	

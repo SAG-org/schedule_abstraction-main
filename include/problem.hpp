@@ -185,8 +185,7 @@ namespace NP {
 	};
 	
 	/**
-	 * @brief Analysis configuration options
-	 * 
+	 * @brief Analysis configuration options 
 	 * Consolidates all exploration and analysis parameters
 	 */
 	struct Analysis_options {

@@ -89,7 +89,7 @@ namespace NP {
 
 				// check if all jobs in dispatched have been dispatched
 				for (Job_index j : must_be_dispatched) {
-					if (n->job_not_dispatched(j)) {
+					if (not n->job_dispatched(j)) {
 						return false;
 					}
 				}
