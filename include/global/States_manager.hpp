@@ -10,6 +10,8 @@
 #ifdef CONFIG_PARALLEL
 #include <unordered_map>
 #include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_vector.h>
+#include <tbb/concurrent_queue.h>
 #else
 #include <unordered_map>
 #endif
@@ -34,14 +36,14 @@ namespace NP {
 			typedef std::shared_ptr<Node> Node_ref;
 			typedef Schedule_state<Time> State;
 			typedef std::shared_ptr<State> State_ref;
-			typedef std::deque<Node_ref> Node_ref_queue;
 #ifdef CONFIG_PARALLEL
 			// Thread-safe concurrent queue for storing nodes during parallel execution
 			typedef tbb::concurrent_queue<Node_ref> Node_refs;
-			typedef tbb::concurrent_unordered_map<hash_value_t, Node_ref_queue> Nodes_map;
+			typedef tbb::concurrent_vector<Node_ref> Nodes_vec;
+			typedef tbb::concurrent_unordered_map<hash_value_t, Nodes_vec> Nodes_map;
 #else
 			typedef std::deque<Node_ref> Node_refs;
-			typedef std::unordered_map<hash_value_t, Node_ref_queue> Nodes_map;
+			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
 #endif
 			typedef std::vector<Node_refs> Nodes_storage;
 
@@ -61,10 +63,14 @@ namespace NP {
 			template <typename... Args>
 			Node_ref new_node(unsigned int depth, Args&&... args)
 			{
+				assert(depth < nodes_storage.size());
 				auto n = node_pool.acquire(std::forward<Args>(args)...);
 #ifdef CONFIG_PARALLEL
+                // Only push into storage if we successfully acquired a node
+                assert(n);
 				nodes_storage[depth].push(n);
 #else
+				assert(n);
 				nodes_storage[depth].push_back(n);
 #endif
 				cache_node(n);
@@ -88,7 +94,9 @@ namespace NP {
 			 */
 			void release_node(const Node_ref& n)
 			{
-				node_pool.release(n);
+				assert(n);
+				if (n)
+					node_pool.release(n);
 			}
 
 			/**
@@ -97,11 +105,14 @@ namespace NP {
 			 */
 			void release_state(const State_ref& s)
 			{
-				state_pool.release(s);
+				assert(s);
+				if (s)
+					state_pool.release(s);
 			}
 
 			Node_refs& get_nodes_at_depth(unsigned int depth)
 			{
+				assert(depth < nodes_storage.size());
 				return nodes_storage[depth];
 			}
 
@@ -195,6 +206,9 @@ namespace NP {
 			 */
 			void release_states_of(Node_ref node)
 			{
+				assert(node);
+				if (!node) 
+					return;
 				auto states = node->get_states();
 				for (auto s = states->begin(); s != states->end(); s++) {
 					release_state(*s);
@@ -216,13 +230,19 @@ namespace NP {
 			 */
 			void cache_node(Node_ref n)
 			{
+				assert(n);
+				if (!n) 
+					return;
 				// create a new list if needed, or lookup if already existing
-				auto res = nodes_by_key.emplace(n->get_key(), Node_ref_queue());
-
+#ifdef CONFIG_PARALLEL
+				auto res = nodes_by_key.emplace(n->get_key(), Nodes_vec());
+#else
+				auto res = nodes_by_key.emplace(n->get_key(), Node_refs());
+#endif
 				auto pair_it = res.first;
 				auto& list = pair_it->second;
 
-				list.push_front(n);
+				list.push_back(n);
 			}
 		};
 
