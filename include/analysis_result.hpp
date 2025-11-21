@@ -122,50 +122,6 @@ void save_result_files(const std::string& fname, const Analysis_result& result, 
 }
 
 /**
- * @brief Extract the analysis result from the explored state space
- * @param space Explored state space
- * @param config Analysis configuration used
- * @return Analysis_result structure containing the analysis results
- */
-template<class Time>
-Analysis_result get_analysis_result(const std::unique_ptr<NP::Global::State_space<Time>>& space, const NP::Scheduling_problem<Time>& problem, const Analysis_config& config) {
-	Analysis_result result;
-	result.schedulable = space->is_schedulable();
-	result.timeout = space->was_timed_out();
-	result.out_of_memory = space->out_of_memory();
-	result.number_of_nodes = space->number_of_nodes();
-	result.number_of_states = space->number_of_states();
-	result.number_of_edges = space->number_of_edges();
-	result.max_width = space->max_exploration_front_width();
-	result.number_of_jobs = space-> get_number_of_jobs_analyzed();
-	result.cpu_time = space->get_cpu_time();
-	
-	if (config.want_rta_file) {
-		result.response_times_csv = generate_rta_csv<Time>(space, problem);
-	}
-	
-	if (config.want_width_file) {
-		result.width_evolution_csv = generate_width_csv<Time>(space, problem);
-	}
-	
-	if (config.want_deadline_miss_info && !result.schedulable) {
-		result.deadline_miss_info = generate_deadline_miss_info<Time>(space, problem);
-	}	
-#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
-	if (config.want_dot_graph) {
-		result.graph = generate_dot_graph<Time>(space, config);
-	}
-#endif
-#ifdef CONFIG_ANALYSIS_EXTENSIONS
-	if (config.want_mk) {
-		auto mk_stream = space->template export_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
-		result.mk_results = mk_stream.str();
-	}
-#endif		
-	return result;
-}
-
-/**
  * @brief Generate the complettion times and response times in CSV format
  * @param space Explored state space
  * @param problem Scheduling problem that was analyzed
@@ -254,5 +210,49 @@ std::string generate_dot_graph(const std::unique_ptr<NP::Global::State_space<Tim
     return graph.str();
 }
 #endif
+
+/**
+ * @brief Extract the analysis result from the explored state space
+ * @param space Explored state space
+ * @param config Analysis configuration used
+ * @return Analysis_result structure containing the analysis results
+ */
+template<class Time>
+Analysis_result get_analysis_result(const std::unique_ptr<NP::Global::State_space<Time>>& space, const NP::Scheduling_problem<Time>& problem, const Analysis_config& config) {
+	Analysis_result result;
+	result.schedulable = space->is_schedulable();
+	result.timeout = space->was_timed_out();
+	result.out_of_memory = space->out_of_memory();
+	result.number_of_nodes = space->number_of_nodes();
+	result.number_of_states = space->number_of_states();
+	result.number_of_edges = space->number_of_edges();
+	result.max_width = space->max_exploration_front_width();
+	result.number_of_jobs = space-> get_number_of_jobs_analyzed();
+	result.cpu_time = space->get_cpu_time();
+	
+	if (config.want_rta_file) {
+		result.response_times_csv = generate_rta_csv<Time>(space, problem);
+	}
+	
+	if (config.want_width_file) {
+		result.width_evolution_csv = generate_width_csv<Time>(space, problem);
+	}
+	
+	if (config.want_deadline_miss_info && !result.schedulable) {
+		result.deadline_miss_info = generate_deadline_miss_info<Time>(space, problem);
+	}	
+#ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
+	if (config.want_dot_graph) {
+		result.graph = generate_dot_graph<Time>(space, config);
+	}
+#endif
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+	if (config.want_mk) {
+		auto mk_stream = space->template export_results<NP::Global::MK_analysis::MK_sp_data_extension<Time>>();
+		result.mk_results = mk_stream.str();
+	}
+#endif		
+	return result;
+}
 
 #endif // ANALYSIS_RESULT_HPP
