@@ -5,7 +5,7 @@
 #include <vector>
 #include "jobs.hpp"
 #include "index_set.hpp"
-#include "global/inter_job_constraints.hpp"
+#include "inter_job_constraints.hpp"
 
 namespace NP {
 namespace Global {

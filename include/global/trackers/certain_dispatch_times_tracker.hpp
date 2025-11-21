@@ -5,7 +5,7 @@
 #include "time.hpp"
 #include "jobs.hpp"
 #include "global/state.hpp"
-#include "global/inter_job_constraints.hpp"
+#include "inter_job_constraints.hpp"
 #include "index_set.hpp"
 
 namespace NP {

@@ -13,9 +13,9 @@
 
 #include "global/state.hpp"
 #include "global/state_space_data.hpp"
-#include "global/ready_jobs_tracker.hpp"
-#include "global/pending_successors_tracker.hpp"
-#include "global/inter_job_constraints.hpp"
+#include "global/trackers/ready_jobs_tracker.hpp"
+#include "global/trackers/pending_successors_tracker.hpp"
+#include "inter_job_constraints.hpp"
 #include "jobs.hpp"
 #include "util.hpp"
 

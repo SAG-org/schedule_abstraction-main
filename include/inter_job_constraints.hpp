@@ -8,7 +8,6 @@
 #include "problem.hpp"
 
 namespace NP {
-	namespace Global {
 
         /**
          * @brief Represents a delay constraint associated with a job
@@ -237,7 +236,6 @@ namespace NP {
 				}
 			}
         };
-	} // namespace Global
 } // namespace NP
 
 #endif // INTER_JOB_CONSTRAINTS_HPP

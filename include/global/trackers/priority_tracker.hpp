@@ -3,7 +3,7 @@
 
 #include "jobs.hpp"
 #include "global/state_space_data.hpp"
-#include "global/inter_job_constraints.hpp"
+#include "inter_job_constraints.hpp"
 #include "global/state.hpp"
 #include "index_set.hpp"
 

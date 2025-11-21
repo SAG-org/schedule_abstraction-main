@@ -1,6 +1,6 @@
 #ifndef GLOBAL_FINISH_TIMES_TRACKER_HPP
 #define GLOBAL_FINISH_TIMES_TRACKER_HPP
-#include "global/job_timing_tracker.hpp"
+#include "global/trackers/job_timing_tracker.hpp"
 namespace NP {
 namespace Global {
 /**

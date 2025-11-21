@@ -15,7 +15,7 @@
 #include "problem.hpp"
 #include "global/node.hpp"
 #include "global/state.hpp"
-#include "global/inter_job_constraints.hpp"
+#include "inter_job_constraints.hpp"
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 #include "global/extension/state_space_data_extension.hpp"
