@@ -374,6 +374,7 @@ namespace NP {
 
 		Time arr_min, arr_max, dl, prio;
 		std::map<unsigned int, Interval<Time>> cost;
+		typename Job<Time>::Job_type j_type = Job<Time>::Job_type::NORMAL;
 
 		in.exceptions(std::istream::failbit | std::istream::badbit);
 
@@ -390,11 +391,16 @@ namespace NP {
 		in >> dl;
 		next_field(in);
 		in >> prio;
-
+		next_field(in);
+		if (more_fields_in_line(in)) {
+			int job_type_int;
+			in >> job_type_int;
+			j_type = static_cast<typename Job<Time>::Job_type>(job_type_int);
+		}
 		in.exceptions(state_before);
 
 		return Job<Time> {jid, Interval<Time>{arr_min, arr_max},
-						cost, dl, prio, idx, tid};
+						cost, dl, prio, idx, tid, j_type};
 	}
 
 	template<class Time>
@@ -424,6 +430,7 @@ namespace NP {
         unsigned long tid, jid;
 		std::size_t idx = 0;
         Time arr_min, arr_max, cost_min, cost_max, dl, prio;
+		typename Job<Time>::Job_type j_type;
 		try {
 			YAML::Node input_job_set = YAML::Load(in);
 
@@ -437,9 +444,16 @@ namespace NP {
 				cost_max = j["Cost max"].as<Time>();
 				dl = j["Deadline"].as<Time>();
 				prio = j["Priority"].as<Time>();
+				if (j["Type"]) {
+					int job_type_int = j["Type"].as<int>();
+					j_type = static_cast<typename Job<Time>::Job_type>(job_type_int);
+				}
+				else {
+					j_type = Job<Time>::Job_type::NORMAL;
+				}
 
 				jobs.push_back(Job<Time>{jid, Interval<Time>{arr_min, arr_max},
-										 Interval<Time>{cost_min, cost_max}, dl, prio, idx, tid});
+										 Interval<Time>{cost_min, cost_max}, dl, prio, idx, tid, j_type});
 				idx++;
 			}
 		} catch (const YAML::Exception& e) {

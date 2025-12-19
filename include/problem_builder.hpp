@@ -66,6 +66,18 @@ namespace NP {
 		else if(jobs_file_is_yaml) {
 			edges = NP::parse_yaml_dag_file<Time>(in, jobs_lookup_table);
 		}
+
+		// Build DAG (predecessors and successors for each job)
+		auto graph = NP::build_graph(jobs.size(), edges);
+		// Compute topological order and assign ranks to jobs
+		auto topo_order = NP::get_jobs_ranks<Time>(graph);
+		if (topo_order.size() != jobs.size()) {
+			std::cerr << "Error: The precedence constraints contain a cycle." << std::endl;
+			exit(1);
+		}
+		for (auto& j : jobs) {
+			j.set_rank(topo_order[j.get_job_index()]);
+		}
 		
 		// Parse mutex constraints
 		std::vector<NP::Exclusion_constraint<Time>> mutexes;

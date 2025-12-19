@@ -10,9 +10,19 @@ namespace NP {
 		finish_to_start
 	};
 
+	/** 
+	 * @brief Class representing a precedence constraint between two jobs.
+	 */
 	template<class Time>
 	class Precedence_constraint {
 	public:
+		/** 
+		 * @brief Constructor for Precedence_constraint.
+		 * @param from Source job ID.
+		 * @param to Destination job ID.
+		 * @param delay Delay interval between the finish and start or the start and start of the two jobs.
+		 * @param jobs_lookup Lookup table to map JobID to Job_index.
+		 */
 		Precedence_constraint(JobID from,
 			JobID to,
 			Interval<Time> delay,
@@ -23,14 +33,22 @@ namespace NP {
 			, type(finish_to_start)
 		{
 			try {
-				fromIndex = jobs_lookup.at(from);
-				toIndex = jobs_lookup.at(to);
+				from_index = jobs_lookup.at(from);
+				to_index = jobs_lookup.at(to);
 			}
 			catch (const std::out_of_range&) {
 				throw InvalidJobReference(from);
 			}
 		}
 
+		/** 
+		 * @brief Constructor for Precedence_constraint.
+		 * @param from Source job ID.
+		 * @param to Destination job ID.
+		 * @param delay Delay interval between the finish and start or the start and start of the two jobs.
+		 * @param type Type of precedence constraint (start-to-start or finish-to-start).
+		 * @param jobs_lookup Lookup table to map JobID to Job_index.
+		 */
 		Precedence_constraint(JobID from,
 			JobID to,
 			Interval<Time> delay,
@@ -42,8 +60,8 @@ namespace NP {
 			, type(type)
 		{
 			try {
-				fromIndex = jobs_lookup.at(from);
-				toIndex = jobs_lookup.at(to);
+				from_index = jobs_lookup.at(from);
+				to_index = jobs_lookup.at(to);
 			}
 			catch (const std::out_of_range&) {
 				throw InvalidJobReference(from);
@@ -62,8 +80,8 @@ namespace NP {
 		{
 			const Job<Time>& jobA = lookup<Time>(jobs, from);
 			const Job<Time>& jobB = lookup<Time>(jobs, to);
-			fromIndex = (Job_index)(&jobA - &(jobs[0]));
-			toIndex = (Job_index)(&jobB - &(jobs[0]));
+			from_index = (Job_index)(&jobA - &(jobs[0]));
+			to_index = (Job_index)(&jobB - &(jobs[0]));
 		}
 
 		// deprecated, for backward compatibility only
@@ -78,60 +96,86 @@ namespace NP {
 		{
 			const Job<Time>& jobA = lookup<Time>(jobs, from);
 			const Job<Time>& jobB = lookup<Time>(jobs, to);
-			fromIndex = (Job_index)(&jobA - &(jobs[0]));
-			toIndex = (Job_index)(&jobB - &(jobs[0]));
+			from_index = (Job_index)(&jobA - &(jobs[0]));
+			to_index = (Job_index)(&jobB - &(jobs[0]));
 		}
 
+		/** 
+		 * @brief Get the JobID of the source job.
+		 */
 		JobID get_fromID() const
 		{
 			return from;
 		}
 
+		/** 
+		 * @brief Get the JobID of the destination job.
+		 */
 		JobID get_toID() const
 		{
 			return to;
 		}
 
+		/** 
+		 * @brief Get the minimum delay between the finish and start or the start and start of the two jobs.
+		 */
 		Time get_min_delay() const
 		{
 			return delay.from();
 		}
 
+		/** 
+		 * @brief Get the maximum delay between the finish and start or the start and start of the two jobs.
+		 */
 		Time get_max_delay() const
 		{
 			return delay.until();
 		}
 
+		/** 
+		 * @brief Get the delay interval between the finish and start or the start and start of the two jobs.
+		 */
 		Interval<Time> get_delay() const
 		{
 			return delay;
 		}
 
+		/** 
+		 * @brief Get the index of the destination job in the job set.
+		 */
 		Job_index get_toIndex() const
 		{
-			return toIndex;
+			return to_index;
 		}
 
+		/** 
+		 * @brief Get the index of the source job in the job set.
+		 */
 		Job_index get_fromIndex() const
 		{
-			return fromIndex;
+			return from_index;
 		}
 
+		/** 
+		 * @brief Get the type of precedence constraint (start-to-start or finish-to-start).
+		 */
 		Precedence_type get_type() const
 		{
 			return type;
 		}
 
 	private:
-		JobID from;
-		JobID to;
-		// toIndex and fromIndex are set during validation
-		Job_index toIndex;
-		Job_index fromIndex;
-		Interval<Time> delay;
-		Precedence_type type;
+		JobID from; // source job ID
+		JobID to; // destination job ID
+		Job_index to_index; // index of the destination job in the job set
+		Job_index from_index; // index of the source job in the job set
+		Interval<Time> delay; // delay interval between the finish and start or the start and start of the two jobs
+		Precedence_type type; // type of precedence constraint (finish-to-start or start-to-start)
 	};
 
+	/** 
+	 * @brief Exception class for invalid precedence constraint parameters.
+	 */
 	class InvalidPrecParameter : public std::exception
 	{
 	public:
@@ -149,10 +193,15 @@ namespace NP {
 
 	};
 
+	/** 
+	 * @brief Validate the parameters of a set of precedence constraints.
+	 * @param precs Set of precedence constraints to validate.
+	 * @throws InvalidPrecParameter if any constraint has invalid parameters.
+	 */
 	template<class Time>
-	void validate_prec_cstrnts(std::vector<Precedence_constraint<Time>>& precs)
+	void validate_prec_cstrnts(const std::vector<Precedence_constraint<Time>>& precs)
 	{
-		for (Precedence_constraint<Time>& prec : precs) {
+		for (const Precedence_constraint<Time>& prec : precs) {
 			if (prec.get_max_delay() < prec.get_min_delay()) {
 				throw InvalidPrecParameter(prec.get_fromID());
 			}
@@ -161,6 +210,73 @@ namespace NP {
 				throw std::invalid_argument("Invalid job indices in precedence constraints");
 			}
 		}
+	}
+
+	// set of successor and predecessor jobs for each job in the precedence graph
+	struct DAG_Graph {
+		std::vector<std::vector<Job_index>> successors;
+		std::vector<std::vector<Job_index>> predecessors;
+	};
+	/** 
+	 * @brief Build lookup maps and adjacency lists once for efficient access
+	 * @param n_jobs Number of jobs in the graph.
+	 * @param edges List of precedence constraints representing edges in the graph.
+	 * @return DAG_Graph defining the predecessors and successors of each job.
+	 */
+	template<class Time>
+	DAG_Graph build_graph(const size_t n_jobs, const std::vector<Precedence_constraint<Time>>& edges) {
+		validate_prec_cstrnts<Time>(edges);
+		DAG_Graph graph;
+		graph.successors.resize(n_jobs);
+		graph.predecessors.resize(n_jobs);
+
+		// Build adjacency lists
+		for (const auto& edge : edges) {
+			auto from_it = edge.get_fromIndex();
+			auto to_it = edge.get_toIndex();
+			graph.successors[from_it].push_back(to_it);
+			graph.predecessors[to_it].push_back(from_it);
+		}
+		return graph;
+	}
+
+	/**
+	 * @brief Get rank of every job in a precedence graph using Kahn's algorithm (topological sort)
+	 * @param graph DAG defining the predecessors and successors of each job.
+	 * @return Vector of ranks indexed by job index.
+	 */
+	template<class Time>
+	std::vector<unsigned int> get_jobs_ranks(const DAG_Graph& graph) {
+		const std::size_t n = graph.successors.size();
+
+		std::vector<std::size_t> in_degree(n, 0);
+		std::vector<unsigned int> rank(n, 0);
+		// Calculate in-degrees
+		for (std::size_t i = 0; i < n; ++i) {
+			in_degree[i] = graph.predecessors[i].size();
+		}
+		// Find all source nodes (no predecessors)
+		std::vector<Job_index> queue;
+		for (std::size_t i = 0; i < n; ++i) {
+			if (in_degree[i] == 0) {
+				queue.push_back(i);
+				rank[i] = 1;
+			}
+		}
+		// Process nodes in topological order
+		std::size_t head = 0;
+		while (head < queue.size()) {
+			Job_index current = queue[head++];
+			for (Job_index succ : graph.successors[current]) {
+				// Update rank: max of all predecessors + 1
+				rank[succ] = std::max(rank[succ], rank[current] + 1);
+				
+				if (--in_degree[succ] == 0) {
+					queue.push_back(succ);
+				}
+			}
+		}		
+		return rank;
 	}
 }
 
