@@ -16,6 +16,7 @@
 #include "global/node.hpp"
 #include "global/state.hpp"
 #include "inter_job_constraints.hpp"
+#include "conditional_dispatch_constraints.hpp"
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 #include "global/extension/state_space_data_extension.hpp"
@@ -54,7 +55,8 @@ namespace NP {
 			std::vector<Job_precedence_set> _must_be_finished_jobs;
 			// inter-job constraints for all jobs in the workload
 			Inter_job_constraints<Time> _inter_job_constraints;
-
+			// conditional dispatch constraints for all jobs in the workload (conditional siblings, incompatible jobs)
+			Conditional_dispatch_constraints<Time> _conditional_dispatch_constraints;
 			// list of actions when a job is aborted
 			std::vector<const Abort_action<Time>*> abort_actions;
 
@@ -78,6 +80,7 @@ namespace NP {
 			const By_time_map& gang_source_jobs_by_latest_arrival;
 			const std::vector<Job_precedence_set>& must_be_finished_jobs;
 			const Inter_job_constraints<Time>& inter_job_constraints;
+			const Conditional_dispatch_constraints<Time>& conditional_dispatch_constraints;
 
 			/**
 			 * @brief Construct state-space metadata from the scheduling problem definition.
@@ -106,6 +109,8 @@ namespace NP {
 				, must_be_finished_jobs(_must_be_finished_jobs)
 				, _inter_job_constraints(jobs, edges, mutexes)
 				, inter_job_constraints(_inter_job_constraints)
+				, _conditional_dispatch_constraints(jobs, edges)
+				, conditional_dispatch_constraints(_conditional_dispatch_constraints)
 				, abort_actions(jobs.size(), NULL)
 			{
 				// Add the jobs involved in finish-to-start precedence constraints to the set of jobs 

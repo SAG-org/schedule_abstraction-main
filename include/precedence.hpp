@@ -1,6 +1,8 @@
 #ifndef PRECEDENCE_HPP
 #define PRECEDENCE_HPP
 
+#include <set>
+#include <vector>
 #include "jobs.hpp"
 
 namespace NP {
@@ -173,6 +175,9 @@ namespace NP {
 		Precedence_type type; // type of precedence constraint (finish-to-start or start-to-start)
 	};
 
+	template<class Time>
+	using Precedence_constraints = std::vector<Precedence_constraint<Time>>;
+
 	/** 
 	 * @brief Exception class for invalid precedence constraint parameters.
 	 */
@@ -199,7 +204,7 @@ namespace NP {
 	 * @throws InvalidPrecParameter if any constraint has invalid parameters.
 	 */
 	template<class Time>
-	void validate_prec_cstrnts(const std::vector<Precedence_constraint<Time>>& precs)
+	void validate_prec_cstrnts(const Precedence_constraints<Time>& precs)
 	{
 		for (const Precedence_constraint<Time>& prec : precs) {
 			if (prec.get_max_delay() < prec.get_min_delay()) {
@@ -212,11 +217,18 @@ namespace NP {
 		}
 	}
 
-	// set of successor and predecessor jobs for each job in the precedence graph
-	struct DAG_Graph {
+	/** 
+	 * @brief Structure representing a directed acyclic graph (DAG) of job precedence constraints.
+	 */
+	struct DAG_graph {
 		std::vector<std::vector<Job_index>> successors;
 		std::vector<std::vector<Job_index>> predecessors;
+		std::size_t size() const {
+			assert(successors.size() == predecessors.size());
+			return successors.size();
+		}
 	};
+
 	/** 
 	 * @brief Build lookup maps and adjacency lists once for efficient access
 	 * @param n_jobs Number of jobs in the graph.
@@ -224,9 +236,9 @@ namespace NP {
 	 * @return DAG_Graph defining the predecessors and successors of each job.
 	 */
 	template<class Time>
-	DAG_Graph build_graph(const size_t n_jobs, const std::vector<Precedence_constraint<Time>>& edges) {
+	DAG_graph build_graph(const size_t n_jobs, const Precedence_constraints<Time>& edges) {
 		validate_prec_cstrnts<Time>(edges);
-		DAG_Graph graph;
+		DAG_graph graph;
 		graph.successors.resize(n_jobs);
 		graph.predecessors.resize(n_jobs);
 
@@ -240,13 +252,60 @@ namespace NP {
 		return graph;
 	}
 
+	/** 
+	 * @brief Get all ancestors of a job in the DAG.
+	 * @param job_index The index of the job.
+	 * @param graph The DAG graph structure.
+	 * @return The job indices of the set of ancestors.
+	 */
+	inline std::set<Job_index> get_ancestors(Job_index job_index, const DAG_graph& graph) {
+		std::set<Job_index> ancestors;
+		std::vector<Job_index> stack;
+		stack.push_back(job_index);
+
+		while (!stack.empty()) {
+			Job_index current = stack.back();
+			stack.pop_back();
+
+			for (Job_index pred : graph.predecessors[current]) {
+				if (ancestors.insert(pred).second) {
+					stack.push_back(pred);
+				}
+			}
+		}
+		return ancestors;
+	}
+
+	/**
+	 * @brief Get all descendants of a job in the DAG.
+	 * @param job_index The index of the job.
+	 * @param graph The DAG graph structure.
+	 * @return The job indices of the set of descendants.
+	 */
+	inline std::set<Job_index> get_descendants(Job_index job_index, const DAG_graph& graph) {
+		std::set<Job_index> descendants;
+		std::vector<Job_index> stack;
+		stack.push_back(job_index);
+		while (!stack.empty()) {
+			Job_index current = stack.back();
+			stack.pop_back();
+
+			for (Job_index succ : graph.successors[current]) {
+				if (descendants.insert(succ).second) {
+					stack.push_back(succ);
+				}
+			}
+		}
+		return descendants;
+	}
+
 	/**
 	 * @brief Get rank of every job in a precedence graph using Kahn's algorithm (topological sort)
 	 * @param graph DAG defining the predecessors and successors of each job.
 	 * @return Vector of ranks indexed by job index.
 	 */
 	template<class Time>
-	std::vector<unsigned int> get_jobs_ranks(const DAG_Graph& graph) {
+	std::vector<unsigned int> get_jobs_ranks(const DAG_graph& graph) {
 		const std::size_t n = graph.successors.size();
 
 		std::vector<std::size_t> in_degree(n, 0);
