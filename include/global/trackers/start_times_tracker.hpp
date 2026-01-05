@@ -2,6 +2,7 @@
 #define GLOBAL_START_TIMES_TRACKER_HPP
 
 #include "global/trackers/job_timing_tracker.hpp"
+#include "inter_job_constraints.hpp"
 namespace NP {
 namespace Global {
 /**
@@ -29,12 +30,14 @@ public:
 	 * @param dispatched_job The job being dispatched
 	 * @param start_time_interval When the job starts
 	 * @param jobs_with_pending_succ Jobs that still have pending successors
+	 * @param constraints Precedence and mutual exclusion constraints of the dispatched job
 	 */
 	void update(
 		const Start_times_tracker& from,
 		Job_index dispatched_job,
 		const Interval<Time>& start_time_interval,
-		const std::vector<Job_index>& jobs_with_pending_succ)
+		const std::vector<Job_index>& jobs_with_pending_succ,
+		const Job_constraints<Time>& constraints)
 	{
 		Job_timing_tracker<Time>::job_times.clear();
 		Job_timing_tracker<Time>::job_times.reserve(jobs_with_pending_succ.size());
@@ -45,14 +48,25 @@ public:
 				Job_timing_tracker<Time>::job_times.emplace_back(job, start_time_interval);
 			} else {
 				// Find this job in the previous tracker
-				// Note that if `job` has non-completed successors in the new state,
-                // it must have had non-completed successors in the previous state too, 
-                // thus there is no risk to reach the end iterator
-                while (it->job_idx != job) {
+				// Note that with conditional DAGs, it is *NOT TRUE* anymore that if `job` has non-completed successors in the new state,
+                // it must have had non-completed successors in the previous state too.
+                while (it != from.job_times.end() && it->job_idx != job) {
 					++it;
-                    assert(it != from.job_times.end());
 				}
-				Job_timing_tracker<Time>::job_times.push_back(*it);
+				if (it == from.job_times.end() || it->job_idx > job)
+					continue;
+				
+				// if job was already dispatched and job must start at least delay_min time units before the newly dispatched job starts,
+				// then job should certainly have started delay_min time units before the newly dispatched job certainly starts
+				Time min_delay = constraints.get_min_delay_after_start_of(job);
+				if (min_delay >= 0) {
+					Time job_est = it->time_interval.min();
+					Time job_lst = std::min(it->time_interval.max(), start_time_interval.max() - min_delay);
+					Job_timing_tracker<Time>::job_times.emplace_back(job, Interval<Time>{job_est, job_lst});
+				} else {
+					// no constraint on start time, keep previous start time interval
+					Job_timing_tracker<Time>::job_times.push_back(*it);
+				}
 			}
 		}
 	}

@@ -170,9 +170,9 @@ namespace NP {
 				// calculate the cores availability this_intervals resulting from dispatching job j on ncores in state 'from'
 				core_avail.update(from.core_avail, start_times, finish_times, ncores, n_prec);
 				// save the job start of every job with a successor with a start to start constraint that is not executed yet in the current state
-				job_start_times.update(from.job_start_times, j, start_times, jobs_with_pending_start_succ);
+				job_start_times.update(from.job_start_times, j, start_times, jobs_with_pending_start_succ, constraints[j]);
 				// save the job finish of every job with a successor with a finish to start constraint that is not executed yet in the current state
-				job_finish_times.update(from.job_finish_times, j, start_times, finish_times, jobs_with_pending_finish_succ, core_avail.num_cores() == 1);
+				job_finish_times.update(from.job_finish_times, j, start_times, finish_times, jobs_with_pending_finish_succ, constraints[j], core_avail.num_cores() == 1);
 
 				// NOTE: must be done after the start times, finish times and core availabilities have been updated
 				certain_dispatch_times.update(*this, state_space_data, ready_succ_jobs, core_avail, scheduled_jobs, next_source_job_rel);
@@ -293,9 +293,9 @@ namespace NP {
 				assert(core_avail.num_cores() > 0);
 
 				// save the job start of every job with a successor with a start to start constraint that is not executed yet in the current state
-				job_start_times.update(from.job_start_times, j, start_times, jobs_with_pending_start_succ);
+				job_start_times.update(from.job_start_times, j, start_times, jobs_with_pending_start_succ, constraints[j]);
 				// save the job finish of every job with a successor with a finish to start constraint that is not executed yet in the current state
-				job_finish_times.update(from.job_finish_times, j, start_times, finish_times, jobs_with_pending_finish_succ, core_avail.num_cores() == 1);
+				job_finish_times.update(from.job_finish_times, j, start_times, finish_times, jobs_with_pending_finish_succ, constraints[j], core_avail.num_cores() == 1);
 
 				// NOTE: must be done after the start times, finish times and core availabilities have been updated
 				certain_dispatch_times.update(*this, state_space_data, ready_succ_jobs, core_avail, scheduled_jobs, next_source_job_rel);

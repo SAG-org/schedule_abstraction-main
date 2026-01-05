@@ -1,6 +1,7 @@
 #ifndef GLOBAL_FINISH_TIMES_TRACKER_HPP
 #define GLOBAL_FINISH_TIMES_TRACKER_HPP
 #include "global/trackers/job_timing_tracker.hpp"
+#include "inter_job_constraints.hpp"
 namespace NP {
 namespace Global {
 /**
@@ -24,6 +25,7 @@ public:
 	 * @param start_time_interval When the job starts
 	 * @param finish_time_interval When the job finishes
 	 * @param jobs_with_pending_succ Jobs that still have pending successors
+	 * @param constraints Precedence and mutual exclusion constraints of the dispatched job
 	 * @param single_core True if system has only one core
 	 */
 	void update(
@@ -32,6 +34,7 @@ public:
 		const Interval<Time>& start_time_interval,
 		const Interval<Time>& finish_time_interval,
 		const std::vector<Job_index>& jobs_with_pending_succ,
+		const Job_constraints<Time>& constraints,
 		bool single_core)
 	{
 		Job_timing_tracker<Time>::job_times.clear();
@@ -45,23 +48,29 @@ public:
 				Job_timing_tracker<Time>::job_times.emplace_back(job, finish_time_interval);
 			} else {
 				// Find this job in the previous tracker
-                // Note that if `job` has non-completed successors in the new state,
-				// it must have had non-completed successors in the previous state too, 
-				// thus there is no risk to reach the end iterator
-				while (it->job_idx != job) {
-					assert(it != from.job_times.end());
+                // Note that with conditional DAGs, it is *NOT TRUE* that if `job` has non-completed successors in the new state,
+				// it must have had non-completed successors in the previous state too.
+				while (it != from.job_times.end() && it->job_idx < job) {
 					++it;
 				}
+				if (it == from.job_times.end() || it->job_idx > job)
+					continue;
 
 				Time job_eft = it->time_interval.min();
 				Time job_lft = it->time_interval.max();
 				
-				// If there is a single-core, we know that jobs dispatched earlier
+				// If there is a single-core, we know that jobs dispatched in the past
 				// must finish before the new job can start
 				if (single_core && job_lft > lst) {
 					job_lft = lst;
 				}
-
+				else {
+					// if job was already dispatched and job must finish at least delay_min time units before the newly dispatched job starts,
+					// then job should certainly have finished delay_min time units before the newly dispatched job certainly starts
+					Time min_delay = constraints.get_min_delay_after_finish_of(job);
+					if (min_delay >= 0)
+						job_lft = std::min(job_lft, lst - min_delay);
+				}
 				Job_timing_tracker<Time>::job_times.emplace_back(job, Interval<Time>{job_eft, job_lft});
 			}
 		}
