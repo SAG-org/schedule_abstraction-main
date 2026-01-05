@@ -51,6 +51,14 @@ namespace NP {
 			return incompatible_jobs[j];
 		}
 
+        /**
+         * @brief Check if two jobs are incompatible (i.e., cannot be dispatched one after the other in the same execution scenario).
+         */
+        bool are_incompatible(Job_index j1, Job_index j2) const {
+            const auto& incomp_set = incompatible_jobs[j1];
+            return std::find(incomp_set.begin(), incomp_set.end(), j2) != incomp_set.end();
+        }
+
     private:
         /** 
          * @brief Build the mapping of conditional siblings.

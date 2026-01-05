@@ -833,7 +833,7 @@ namespace NP {
 						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
 						if (next == nullptr)
 						{
-							next = states_mgr.find_node(n->next_key(j), n->get_scheduled_jobs(), j.get_job_index());
+							next = states_mgr.find_node(n->next_key(j.get_job_index(), sp_data), n->get_scheduled_jobs(), j.get_job_index());
 							// If there is no node yet, create one.
 							if (next == nullptr)
 								next = new_node(1, *n, j, j.get_job_index(), sp_data);

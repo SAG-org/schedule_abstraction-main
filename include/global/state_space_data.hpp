@@ -216,16 +216,27 @@ namespace NP {
 				{
 					assert(dispatched(n, *pred.reference_job)); // function should not be called if a predecessor is not dispatched yet
 					Interval<Time> st{ 0, 0 };
-					s.get_start_times(pred.reference_job->get_job_index(), st);
-					r.lower_bound(st.min() + pred.delay.min());
-					r.extend_to(st.max() + pred.delay.max());
+					bool has_st = s.get_start_times(pred.reference_job->get_job_index(), st);
+					if (has_st) {
+						if (j.get_type() == Job<Time>::Job_type::C_JOIN) {
+							// for conditional join nodes, take the minimum constraint imposed by predecessors
+							r.reduce_to(st.min() + pred.delay.min());
+						} else {
+							// for other jobs, take the maximum constraint imposed by predecessors
+							r.lower_bound(st.min() + pred.delay.min());
+						}
+						r.extend_to(st.max() + pred.delay.max());
+					}
+					// only reason a predecessor of j might not have start times is if it is a conditional join node
+					assert(has_st || j.get_type() == Job<Time>::Job_type::C_JOIN);
 				}
 				for (const auto& excl : cstr.between_starts)
 				{
 					if (!dispatched(n, *excl.reference_job))
 						continue; // doesn't constrain anything if the other job is not dispatched yet
 					Interval<Time> st{ 0, 0 };
-					s.get_start_times(excl.reference_job->get_job_index(), st);
+					bool has_st = s.get_start_times(excl.reference_job->get_job_index(), st);
+					assert(has_st); // start times must be available for dispatched jobs
 					r.lower_bound(st.min() + excl.delay.min());
 					r.extend_to(st.max() + excl.delay.max());
 				}
@@ -233,16 +244,25 @@ namespace NP {
 				{
 					assert(dispatched(n, *pred.reference_job)); // function should not be called if a predecessor is not dispatched yet
 					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred.reference_job->get_job_index(), ft);
-					r.lower_bound(ft.min() + pred.delay.min());
-					r.extend_to(ft.max() + pred.delay.max());
+					bool has_ft =s.get_finish_times(pred.reference_job->get_job_index(), ft);
+					if (has_ft) {
+						if (j.get_type() == Job<Time>::Job_type::C_JOIN) {
+							// for conditional join nodes, take the minimum constraint imposed by predecessors
+							r.reduce_to(ft.min() + pred.delay.min());
+						} else {
+							// for other jobs, take the maximum constraint imposed by predecessors
+							r.lower_bound(ft.min() + pred.delay.min());
+						}
+						r.extend_to(ft.max() + pred.delay.max());
+					}
 				}
 				for (const auto& excl : cstr.between_executions)
 				{
 					if (!dispatched(n, *excl.reference_job))
 						continue; // doesn't constrain anything if the other job is not dispatched yet
 					Interval<Time> ft{ 0, 0 };
-					s.get_start_times(excl.reference_job->get_job_index(), ft);
+					bool has_ft = s.get_start_times(excl.reference_job->get_job_index(), ft);
+					assert(has_ft); // start times must be available for dispatched jobs
 					r.lower_bound(ft.min() + excl.delay.min());
 					r.extend_to(ft.max() + excl.delay.max());
 				}
@@ -338,7 +358,12 @@ namespace NP {
 						continue;
 
 					Interval<Time> st{ 0, 0 };
-					s.get_start_times(pred_idx, st);
+					bool has_st = s.get_start_times(pred_idx, st);
+					if (!has_st) {
+						// only reason a predecessor of j_high might not have start times is if j_high is a conditional join node
+						assert(j_high.get_type() == Job<Time>::Job_type::C_JOIN);
+						continue;
+					}
 					latest_ready_high = std::max(latest_ready_high, st.max() + delay_max);
 				}
 
@@ -369,7 +394,12 @@ namespace NP {
 					const auto delay_max = prec.delay.max();
 					auto pred_idx = prec.reference_job->get_job_index();
 					Interval<Time> ft{ 0, 0 };
-					s.get_finish_times(pred_idx, ft);
+					bool has_ft = s.get_finish_times(pred_idx, ft);
+					if (!has_ft) {
+						// only reason a predecessor of j_high might not have finish times is if j_high is a conditional join node
+						assert(j_high.get_type() == Job<Time>::Job_type::C_JOIN);
+						continue;
+					}
 
 					// If the delay is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
@@ -544,11 +574,28 @@ namespace NP {
 					it != n.get_ready_successor_jobs().end(); it++)
 				{
 					const Job<Time>& j_high = **it;
+					Job_index j_h_index = j_high.get_job_index();
 
-					// j_high is not relevant if it is already scheduled or not of higher priority
-					if (j_high.higher_priority_than(reference_job)) {
-						// does it beat what we've already seen?
-						latest_ready_high = std::min(latest_ready_high, conditional_latest_ready_time(n, s, j_high, reference_job.get_job_index(), ncores));
+					// j_high is not relevant if it is not of higher priority or is incompatible with reference_job
+					if (j_high.higher_priority_than(reference_job) && not_incompatible(j_h_index, reference_job.get_job_index())) {
+						if (conditional_dispatch_constraints.has_conditional_siblings(j_h_index)) {
+							// if j_high has conditional siblings, we must take the sibling with the largest ready time
+							Time ready_max = (Time) 0;
+							for (const auto& sibling : *conditional_dispatch_constraints.get_conditional_siblings(j_h_index)) {
+								const auto& j_sib = jobs[sibling];
+								if (j_sib.higher_priority_than(reference_job))
+									ready_max = std::max(ready_max, conditional_latest_ready_time(n, s, j_sib, reference_job.get_job_index(), ncores));
+								else {
+									// if at least one of the siblings has a lower priority than the reference_job than there is a scenario 
+									// where none of the siblings may prevent reference_job to execute due to the FP scheduling rule
+									ready_max = Time_model::constants<Time>::infinity();
+									break;
+								}
+								latest_ready_high = std::min(latest_ready_high, ready_max);
+							}
+						} else {
+							latest_ready_high = std::min(latest_ready_high, conditional_latest_ready_time(n, s, j_high, reference_job.get_job_index(), ncores));
+						}
 						if (latest_ready_high <= lower_bound) break;
 					}
 				}
@@ -657,14 +704,19 @@ namespace NP {
 
 		private:
 
-			bool not_dispatched(const Node& n, const Job<Time>& j) const
+			inline bool not_dispatched(const Node& n, const Job<Time>& j) const
 			{
 				return not n.job_dispatched(j.get_job_index());
 			}
 
-			bool dispatched(const Node& n, const Job<Time>& j) const
+			inline bool dispatched(const Node& n, const Job<Time>& j) const
 			{
 				return n.job_dispatched(j.get_job_index());
+			}
+
+			inline bool not_incompatible(const Job_index j1, const Job_index j2) const
+			{
+				return !conditional_dispatch_constraints.are_incompatible(j1, j2);
 			}
 
 			State_space_data(const State_space_data& origin) = delete;
