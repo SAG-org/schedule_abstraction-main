@@ -4,6 +4,7 @@
 #include "jobs.hpp"
 #include "global/state_space_data.hpp"
 #include "inter_job_constraints.hpp"
+#include "conditional_dispatch_constraints.hpp"
 #include "global/state.hpp"
 #include "index_set.hpp"
 
@@ -90,12 +91,14 @@ public:
      * 
      * @param state The current schedule state
      * @param constraints The inter-job constraints in the system
+	 * @param cond_constr The conditional dispatch constraints (set of incompatible jobs and conditional siblings)
      * @param ready_succ_jobs The list of ready-successor jobs sorted by priority
      * @param scheduled_jobs The set of jobs that have already been scheduled
 	 * @param num_cores The number of cores in the system.
 	 */
 	void update(const Schedule_state<Time>& state,
 				const Inter_job_constraints<Time>& constraints,
+				const Conditional_dispatch_constraints<Time>& cond_constr,
 				const std::vector<const Job<Time>*>& ready_succ_jobs,
 				const Index_set& scheduled_jobs,
 				unsigned int num_cores)
@@ -109,11 +112,18 @@ public:
 
 		for (auto j : ready_succ_jobs) {
 			// skip gang jobs that require more than one core
+			// TODO: this is pessimistic but safe. We should check if we can handle gang jobs more accurately.
 			if (j->get_min_parallelism() > 1) {
 				rem_rjobs--;
 				continue;
 			}
-			// if the job is certainly ready, we know it will be ready when the first core becomes free
+			// skip jobs with conditional siblings
+			// TODO: this is very pessimistic but safe. Handling conditional siblings here would significatly improve performances
+			if (cond_constr.has_conditional_siblings(j->get_job_index())){
+				rem_rjobs--;
+				continue;
+			}
+			// if the job is certainly ready, we know it will be ready to dispatch when the first core becomes free
 			if (state.certainly_ready(j, constraints, scheduled_jobs)) {
 				min_priority_job = j;
 				// since ready_succ_jobs is sorted in decreasing priority order,

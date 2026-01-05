@@ -177,7 +177,7 @@ namespace NP {
 				// NOTE: must be done after the start times, finish times and core availabilities have been updated
 				certain_dispatch_times.update(*this, state_space_data, ready_succ_jobs, core_avail, scheduled_jobs, next_source_job_rel);
 				// NOTE: must be done after the start times and finish times have been updated			
-				min_next_prio_job.update(*this, constraints, ready_succ_jobs, scheduled_jobs, core_avail.num_cores());
+				min_next_prio_job.update(*this, constraints, state_space_data.conditional_dispatch_constraints, ready_succ_jobs, scheduled_jobs, core_avail.num_cores());
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				extensions.construct(*this, from, j, start_times, finish_times,
@@ -300,7 +300,7 @@ namespace NP {
 				// NOTE: must be done after the start times, finish times and core availabilities have been updated
 				certain_dispatch_times.update(*this, state_space_data, ready_succ_jobs, core_avail, scheduled_jobs, next_source_job_rel);
 				// NOTE: must be done after the start times and finish times have been updated
-				min_next_prio_job.update(*this, constraints, ready_succ_jobs, scheduled_jobs, core_avail.num_cores());
+				min_next_prio_job.update(*this, constraints, state_space_data.conditional_dispatch_constraints, ready_succ_jobs, scheduled_jobs, core_avail.num_cores());
 
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				extensions.reset(*this, from, j, start_times, finish_times,

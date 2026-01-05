@@ -6,6 +6,7 @@
 #include "jobs.hpp"
 #include "index_set.hpp"
 #include "inter_job_constraints.hpp"
+#include "conditional_dispatch_constraints.hpp"
 
 namespace NP {
 namespace Global {
@@ -47,12 +48,14 @@ public:
 	 * @param from Previous tracker state
 	 * @param dispatched_job Index of job being dispatched
 	 * @param constraints Inter-job constraints data
+	 * @param cond_cstrs Conditional dispatch constraints data (incompatible jobs)
 	 * @param scheduled_jobs Set of jobs that have been dispatched
      */
 	void update(
 		const Ready_jobs_tracker& from,
 		Job_index dispatched_job,
 		const Inter_job_constraints<Time>& constraints,
+		const Conditional_dispatch_constraints<Time>& cond_cstrs,
         const Job_set& scheduled_jobs)
 	{
 		const auto& job_constraints = constraints[dispatched_job];
@@ -69,8 +72,8 @@ public:
 		auto old_it = from.ready_successor_jobs.begin();
 		auto old_end = from.ready_successor_jobs.end();
 		
-		// Skip the dispatched job if it was in the ready list
-		while (old_it != old_end && (*old_it)->get_job_index() == dispatched_job) {
+		// Skip the dispatched job and its incompatible jobs if they were in the ready list
+		while (old_it != old_end && cond_cstrs.are_incompatible((*old_it)->get_job_index(), dispatched_job)) {
 			++old_it;
 		}
 		
@@ -123,8 +126,8 @@ public:
 			ready_successor_jobs.push_back(candidate);
 			if (source == 0) {
 				++old_it;
-				// Skip if it is the job we just dispatched
-				while (old_it != old_end && (*old_it)->get_job_index() == dispatched_job) {
+				// Skip if it is the job we just dispatched or an incompatible job with the job we just dispatched
+				while (old_it != old_end &&  cond_cstrs.are_incompatible((*old_it)->get_job_index(), dispatched_job)) {
 					++old_it;
 				}
 			} else if (source == 1) {

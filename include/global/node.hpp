@@ -176,10 +176,10 @@ namespace NP {
 				std::size_t idx,
 				const State_space_data<Time>& state_space_data
 			)
-				: scheduled_jobs{ from.scheduled_jobs, idx }
-				, lookup_key{ from.next_key(j) }
+				: scheduled_jobs{ from.scheduled_jobs, state_space_data.conditional_dispatch_constraints.get_incompatible_jobs(idx) }
+				, lookup_key{ from.next_key(idx, state_space_data) }
 				, num_cpus(from.num_cpus)
-				, num_jobs_scheduled(from.num_jobs_scheduled + 1)
+				, num_jobs_scheduled(from.num_jobs_scheduled + state_space_data.conditional_dispatch_constraints.get_incompatible_jobs(idx).size())
 				, a_min{ 0 }
 				, a_max{ Time_model::constants<Time>::infinity() }
 				, next_certain_successor_jobs_dispatch{ Time_model::constants<Time>::infinity() }
@@ -189,7 +189,7 @@ namespace NP {
 				next_certain_sequential_source_job_release = state_space_data.earliest_certain_sequential_source_job_release(from.next_certain_sequential_source_job_release, *this);
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, 
 					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
-				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
+				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, state_space_data.conditional_dispatch_constraints, scheduled_jobs);
 				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
@@ -272,10 +272,11 @@ namespace NP {
 				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
 #endif
 				states.clear();
-				scheduled_jobs.set(from.scheduled_jobs, idx);
-				lookup_key = from.next_key(j);
+				const auto& incomp_jobs = state_space_data.conditional_dispatch_constraints.get_incompatible_jobs(idx);
+				scheduled_jobs.set(from.scheduled_jobs, incomp_jobs);
+				lookup_key = from.next_key(idx, state_space_data);
 				num_cpus = from.num_cpus;
-				num_jobs_scheduled = from.num_jobs_scheduled + 1;
+				num_jobs_scheduled = from.num_jobs_scheduled + incomp_jobs.size();
 				a_min = 0;
 				a_max = Time_model::constants<Time>::infinity();
 				earliest_potential_release = state_space_data.earliest_possible_job_release(from.earliest_potential_release, *this);
@@ -284,7 +285,7 @@ namespace NP {
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, 
 					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
-				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, scheduled_jobs);
+				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, state_space_data.conditional_dispatch_constraints, scheduled_jobs);
 				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
@@ -404,9 +405,14 @@ namespace NP {
 			 * @param j job to dispatch
 			 * @return next key after dispatching job j
 			 */
-			hash_value_t next_key(const Job<Time>& j) const
+			hash_value_t next_key(Job_index j, const State_space_data<Time>& sp_data) const
 			{
-				return get_key() ^ j.get_key();
+				hash_value_t new_key = lookup_key;
+				const Workload& jobs = sp_data.jobs;
+				for (Job_index idx : sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j)) {
+					new_key ^= jobs[idx].get_key();
+				}
+				return new_key;
 			}
 
 			/** @brief Earliest time when any core becomes available accros all states in this node. */
