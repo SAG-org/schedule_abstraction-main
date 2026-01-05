@@ -6,6 +6,7 @@
 #include "jobs.hpp"
 #include "global/state.hpp"
 #include "inter_job_constraints.hpp"
+#include "conditional_dispatch_constraints.hpp"
 #include "index_set.hpp"
 
 namespace NP {
@@ -108,7 +109,7 @@ public:
 		Time next_source_job_release) 
 	{
 		update_earliest_certain_gang_source_job_dispatch(next_source_job_release, scheduled_jobs, state_space_data, core_avail);
-		update_earliest_certain_successor_job_dispatch(state, ready_succ_jobs, state_space_data.inter_job_constraints, core_avail);
+		update_earliest_certain_successor_job_dispatch(state, ready_succ_jobs, state_space_data.inter_job_constraints, state_space_data.conditional_dispatch_constraints, core_avail);
 	}
 
 private:
@@ -158,12 +159,14 @@ private:
 	 * @param state The current schedule state
 	 * @param ready_succ_jobs The list of ready-successor jobs
 	 * @param constraints The list of precedence and mutual exclusion constraints between jobs
+	 * @param cond_constr The conditional dispatch constraints (conditional siblings and incompatible jobs)
 	 * @param core_avail The core availability intervals
 	 */
 	void update_earliest_certain_successor_job_dispatch(
 		const Schedule_state<Time>& state,
 		const std::vector<const Job<Time>*>& ready_succ_jobs,
 		const Inter_job_constraints<Time>& constraints,
+		const Conditional_dispatch_constraints<Time>& cond_constr,
 		const Core_availability_tracker<Time>& core_avail)
 	{
 		earliest_certain_successor_job_dispatch = Time_model::constants<Time>::infinity();
@@ -171,31 +174,69 @@ private:
 		for (const Job<Time>* rj : ready_succ_jobs) {
 			Time avail = core_avail.get_availability(rj->get_min_parallelism()).max();
 			Time ready_time = std::max(avail, rj->latest_arrival());
-			for (const auto& pred : constraints[rj->get_job_index()].predecessors_start_to_start)
-			{
-				Interval<Time> stimes(0, 0);
-				state.get_start_times(pred.reference_job->get_job_index(), stimes);
-				ready_time = std::max(ready_time, stimes.max() + pred.delay.max());
-			}
-			for (const auto& pred : constraints[rj->get_job_index()].predecessors_finish_to_start)
-			{
-				Interval<Time> ftimes(0, 0);
-				state.get_finish_times(pred.reference_job->get_job_index(), ftimes);
-				ready_time = std::max(ready_time, ftimes.max() + pred.delay.max());
-			}
-			for (const auto& excl : constraints[rj->get_job_index()].between_starts)
-			{
-				Interval<Time> stimes(0, 0);
-				// if it has started then we account for the constraint
-				if( state.get_start_times(excl.reference_job->get_job_index(), stimes) )
-					ready_time = std::max(ready_time, stimes.max() + excl.delay.max());
-			}
-			for (const auto& excl : constraints[rj->get_job_index()].between_executions)
-			{
-				Interval<Time> ftimes(0, 0);
-				// if it has executed then we account for the exclusion constraint
-				if( state.get_finish_times(excl.reference_job->get_job_index(), ftimes) )
-					ready_time = std::max(ready_time, ftimes.max() + excl.delay.max());
+			// we go through all conditional siblings of rj to find the latest ready time among all siblings
+			// note that rj is included in its set of conditional siblings, and if rj does not have conditional siblings
+			// then the set only includes rj itself
+			for (auto sibling : *cond_constr.get_conditional_siblings(rj->get_job_index())) {			
+				Job_index sib_index = sibling->get_job_index();
+				for (const auto& pred : constraints[sib_index].predecessors_start_to_start)
+				{
+					Interval<Time> stimes(0, 0);
+					// pred may not have been dispatched if sibling is a conditional join job, in which case we ignore the constraint
+					bool has_st = state.get_start_times(pred.reference_job->get_job_index(), stimes);
+					if (has_st)
+						ready_time = std::max(ready_time, stimes.max() + pred.delay.max());
+					else if (sibling->get_type() != Job<Time>::C_JOIN) {
+						// if sibling is not a conditional join job and pred has not started yet, then we cannot guarantee that sibling can start
+						// so we set ready_time to infinity and break out of the loop
+						ready_time = Time_model::constants<Time>::infinity();
+						break;
+					}
+				}
+				// if ready_time is already infinity we break out of the loop
+				if (ready_time == Time_model::constants<Time>::infinity())
+					break;
+
+				for (const auto& pred : constraints[sib_index].predecessors_finish_to_start)
+				{
+					Interval<Time> ftimes(0, 0);
+					// pred may not have been dispatched if sibling is a conditional join job, in which case we ignore the constraint
+					bool has_ft = state.get_finish_times(pred.reference_job->get_job_index(), ftimes);
+					if (has_ft)
+						ready_time = std::max(ready_time, ftimes.max() + pred.delay.max());
+					else if (sibling->get_type() != Job<Time>::C_JOIN) {
+						// if sibling is not a conditional join job and pred has not finished yet, then we cannot guarantee that sibling can start
+						// so we set ready_time to infinity and break out of the loop
+						ready_time = Time_model::constants<Time>::infinity();
+						break;
+					}
+				}
+				// if ready_time is already infinity we break out of the loop
+				if (ready_time == Time_model::constants<Time>::infinity())
+					break;
+
+				// we now account for mutual exclusion constraints between sibling and other jobs
+				for (const auto& excl : constraints[sib_index].between_starts)
+				{
+					Interval<Time> stimes(0, 0);
+					// if it has started then we account for the constraint
+					if( state.get_start_times(excl.reference_job->get_job_index(), stimes) )
+						ready_time = std::max(ready_time, stimes.max() + excl.delay.max());
+				}
+				// if ready_time is already infinity we break out of the loop
+				if (ready_time == Time_model::constants<Time>::infinity())
+					break;
+
+				for (const auto& excl : constraints[sib_index].between_executions)
+				{
+					Interval<Time> ftimes(0, 0);
+					// if it has executed then we account for the exclusion constraint
+					if( state.get_finish_times(excl.reference_job->get_job_index(), ftimes) )
+						ready_time = std::max(ready_time, ftimes.max() + excl.delay.max());
+				}
+				// if ready_time is already infinity we break out of the loop
+				if (ready_time == Time_model::constants<Time>::infinity())
+					break;
 			}
 			earliest_certain_successor_job_dispatch =
 				std::min(earliest_certain_successor_job_dispatch, ready_time);

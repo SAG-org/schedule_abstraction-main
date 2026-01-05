@@ -581,10 +581,9 @@ namespace NP {
 						if (conditional_dispatch_constraints.has_conditional_siblings(j_h_index)) {
 							// if j_high has conditional siblings, we must take the sibling with the largest ready time
 							Time ready_max = (Time) 0;
-							for (const auto& sibling : *conditional_dispatch_constraints.get_conditional_siblings(j_h_index)) {
-								const auto& j_sib = jobs[sibling];
-								if (j_sib.higher_priority_than(reference_job))
-									ready_max = std::max(ready_max, conditional_latest_ready_time(n, s, j_sib, reference_job.get_job_index(), ncores));
+							for (auto sibling : *conditional_dispatch_constraints.get_conditional_siblings(j_h_index)) {
+								if (sibling->higher_priority_than(reference_job))
+									ready_max = std::max(ready_max, conditional_latest_ready_time(n, s, *sibling, reference_job.get_job_index(), ncores));
 								else {
 									// if at least one of the siblings has a lower priority than the reference_job than there is a scenario 
 									// where none of the siblings may prevent reference_job to execute due to the FP scheduling rule

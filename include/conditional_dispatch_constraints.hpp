@@ -12,10 +12,11 @@ namespace NP {
     template<class Time>
     class Conditional_dispatch_constraints {
 		using Workload   = typename Job<Time>::Job_set;
+        typedef const Job<Time>* Job_ref;
         typedef std::vector<Job_index> Incompatible_jobs_set;
-        typedef std::vector<Job_index> Conditional_siblings;
+        typedef std::vector<Job_ref> Conditional_siblings;
 
-		// The set of conditional siblings for each job (nullptr if the job has no conditional siblings). If a job has conditional siblings then the set includes the job itself.
+		// The set of conditional siblings for each job. The set includes the job itself. If the job has no conditional siblings, the set only includes the job itself.
         std::vector<std::shared_ptr<Conditional_siblings>> siblings;
 		// The set of jobs that will never be dispatched after the given job is dispatched. The job itself is thus included in the set.
         std::vector<Incompatible_jobs_set> incompatible_jobs;
@@ -34,11 +35,12 @@ namespace NP {
          * @brief Check if a job has conditional siblings.
          */
         bool has_conditional_siblings(Job_index j) const {
-            return siblings[j] != nullptr;
+            assert(siblings[j] != nullptr);
+            return siblings[j]->size() > 1;
         }
 
         /**
-         * @brief Get the set of conditional siblings for a job. Note that if the job has conditional siblings then the set includes the job itself.
+         * @brief Get the set of conditional siblings for a job. Note that the set includes the job itself.
          */
         std::shared_ptr<Conditional_siblings> get_conditional_siblings(Job_index j) const {
             return siblings[j];
@@ -74,9 +76,15 @@ namespace NP {
                     // find all siblings
                     const auto& successors = graph.successors[j];
                     for (const auto& succ_index : successors) {
-                        sibling_set->push_back(succ_index);
+                        sibling_set->push_back(&jobs[succ_index]);
                         siblings[succ_index] = sibling_set;
                     }
+                }
+                if (siblings[j] == nullptr) {
+                    // job has no conditional siblings, so we create a set with only itself
+                    auto singleton_set = std::make_shared<Conditional_siblings>();
+                    singleton_set->push_back(&jobs[j]);
+                    siblings[j] = singleton_set;
                 }
             }
         }
@@ -99,13 +107,13 @@ namespace NP {
 						// union of all descendants of all siblings and siblings themsleves
 						std::set<Job_index> union_set;
 						for (std::size_t s = 0; s < sibs.size(); ++s) {
-							sib_descendants[s] = get_descendants(sibs[s], graph);
+							sib_descendants[s] = get_descendants(sibs[s]->get_job_index(), graph);
 							union_set.insert(sib_descendants[s].begin(), sib_descendants[s].end());
-							union_set.insert(sibs[s]); // include the sibling itself
+							union_set.insert(sibs[s]->get_job_index()); // include the sibling itself
 						}
 						// for each sibling, the incompatible jobs are the union minus its own descendants
 						for (std::size_t s = 0; s < sibs.size(); ++s) {
-							Job_index sib_index = sibs[s];
+							Job_index sib_index = sibs[s]->get_job_index();
 							for (Job_index uj : union_set) {
 								if (sib_descendants[s].count(uj) == 0) {
 									incompatible_jobs[sib_index].push_back(uj);
