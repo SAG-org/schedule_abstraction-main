@@ -190,7 +190,7 @@ namespace NP {
 				next_certain_source_job_release = std::min(next_certain_sequential_source_job_release, 
 					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, state_space_data.conditional_dispatch_constraints, scheduled_jobs);
-				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
+				jobs_with_pending_successors.update(from.jobs_with_pending_successors, state_space_data.conditional_dispatch_constraints.get_incompatible_jobs_with_pending_successors(idx), state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
 			/**
@@ -286,7 +286,7 @@ namespace NP {
 					state_space_data.earliest_certain_gang_source_job_release(from.next_certain_source_job_release, *this));
 				next_certain_gang_source_job_dispatch = Time_model::constants<Time>::infinity();
 				ready_successor_jobs.update(from.ready_successor_jobs, idx, state_space_data.inter_job_constraints, state_space_data.conditional_dispatch_constraints, scheduled_jobs);
-				jobs_with_pending_successors.update(from.jobs_with_pending_successors, idx, state_space_data.inter_job_constraints, this->scheduled_jobs);
+				jobs_with_pending_successors.update(from.jobs_with_pending_successors, state_space_data.conditional_dispatch_constraints.get_incompatible_jobs_with_pending_successors(idx), state_space_data.inter_job_constraints, this->scheduled_jobs);
 			}
 
 			/**

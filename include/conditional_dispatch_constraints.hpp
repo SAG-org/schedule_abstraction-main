@@ -20,10 +20,13 @@ namespace NP {
         std::vector<std::shared_ptr<Conditional_siblings>> siblings;
 		// The set of jobs that will never be dispatched after the given job is dispatched. The job itself is thus included in the set.
         std::vector<Incompatible_jobs_set> incompatible_jobs;
+        // The set of incompatible jobs with pending successors for each job.
+        std::vector<Incompatible_jobs_set> incompatible_jobs_with_pending_successors;
 
     public:
         Conditional_dispatch_constraints(const Workload& jobs, const Precedence_constraints<Time>& precs) 
             : incompatible_jobs(jobs.size())
+            , incompatible_jobs_with_pending_successors(jobs.size())
             , siblings(jobs.size(), nullptr)
         {
             DAG_graph dag = build_graph<Time>(jobs.size(), precs);
@@ -59,6 +62,13 @@ namespace NP {
         bool are_incompatible(Job_index j1, Job_index j2) const {
             const auto& incomp_set = incompatible_jobs[j1];
             return incomp_set.count(j2) > 0;
+        }
+
+        /**
+         * @brief Get the set of incompatible jobs with pending successors for a job.
+         */
+        const Incompatible_jobs_set& get_incompatible_jobs_with_pending_successors(Job_index j) const {
+            return incompatible_jobs_with_pending_successors[j];
         }
 
     private:
@@ -117,12 +127,22 @@ namespace NP {
 							for (Job_index uj : union_set) {
 								if (sib_descendants[s].count(uj) == 0) {
 									incompatible_jobs[sib_index].emplace(uj);
+                                    // check if uj has pending successors (i.e., one of the successors of uj is a descendant of sibling sib_index)
+                                    for (Job_index succ : graph.successors[uj]) {
+                                        if (sib_descendants[s].count(succ) > 0) {
+                                            incompatible_jobs_with_pending_successors[sib_index].emplace(uj);
+                                            break;
+                                        }
+                                    }
 								}
 							}
 						}
 					} else {
 						// non-conditional siblings have only themselves as incompatible
-						incompatible_jobs[i].emplace(i); 
+						incompatible_jobs[i].emplace(i);
+                        if (graph.successors[i].size() > 0) {
+                            incompatible_jobs_with_pending_successors[i].emplace(i);
+                        }
 					}
 				}
 			}
