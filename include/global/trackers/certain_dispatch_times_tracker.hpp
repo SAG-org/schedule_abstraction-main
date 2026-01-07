@@ -123,6 +123,10 @@ private:
 	/**
 	 * @brief Finds the earliest time a gang source job (i.e., a job without predecessors that requires more than one core to start executing)
 	 * is certainly released and has enough cores available to start executing at or after time `after`
+	 * 
+	 * calculate: min_{j \in GangSourceJobs \ Omega(v)} { max( r^max(j), A^max_p^min(j)(v)) ) }
+	 * 				where GangSourceJobs = { j | Pred(j) = emptyset and p^min(j) > 1 }
+	 * 
 	 * @param after Time after which we look for the earliest time a gang source job is certainly ready to dispatch
 	 * @param scheduled_jobs Set of jobs that were already dispatched
 	 * @param state_space_data State space data
@@ -147,15 +151,23 @@ private:
 			if (scheduled_jobs.contains(jp->get_job_index()))
 				continue;
 
-			// it's incomplete and not ignored 
-			earliest_certain_gang_source_job_dispatch = std::min(earliest_certain_gang_source_job_dispatch,
-				std::max(jp->latest_arrival(),
-					core_avail.get_availability(jp->get_min_parallelism()).max()));
+			// max( r^max(j), A^max_p^min(j)(v) )
+			Time disp = std::max(jp->latest_arrival(),
+					core_avail.get_availability(jp->get_min_parallelism()).max());
+			earliest_certain_gang_source_job_dispatch = std::min(earliest_certain_gang_source_job_dispatch, disp);
 		}
 	}
 	
 	/**
 	 * @brief Calculate the earliest time a job with precedence constraints will become ready to dispatch.
+	 * 
+	 * calculate: min_{j \in R^pot(v)} { max_{sib \in CondSibs(j)} {
+	 * 									 max{ r^max(sib), A^max_p^min(sib)(v)),
+	 * 										  max_{i \in Pred^s(sib)} { ST^max(i) + delay^max(i,sib) }, 
+	 * 										  max_{i \in Pred^f(sib)} { FT^max(i) + delay^max(i,sib) }, 
+	 * 										  max_{i \in Mutx^s(sib) \cup Omega(v)} { ST^max(i) + delay^max(i,sib) }, 
+	 * 										  max_{i \in Mutx^f(sib) \cup Omega(v)} { FT^max(i) + delay^max(i,sib) } } } }
+	 * 
 	 * @param state The current schedule state
 	 * @param ready_succ_jobs The list of ready-successor jobs
 	 * @param constraints The list of precedence and mutual exclusion constraints between jobs
@@ -172,13 +184,16 @@ private:
 		earliest_certain_successor_job_dispatch = Time_model::constants<Time>::infinity();
 		// we go through all successor jobs that are ready and update the earliest ready time
 		for (const Job<Time>* rj : ready_succ_jobs) {
-			Time avail = core_avail.get_availability(rj->get_min_parallelism()).max();
-			Time ready_time = std::max(avail, rj->latest_arrival());
 			// we go through all conditional siblings of rj to find the latest ready time among all siblings
 			// note that rj is included in its set of conditional siblings, and if rj does not have conditional siblings
 			// then the set only includes rj itself
+			Time ready_time = 0;
 			for (auto sibling : *cond_constr.get_conditional_siblings(rj->get_job_index())) {			
 				Job_index sib_index = sibling->get_job_index();
+				// max{ r^max(sib), A^max_p^min(sib)(v))}
+				Time avail = core_avail.get_availability(sibling->get_min_parallelism()).max();
+				ready_time = std::max(ready_time, std::max(avail, sibling->latest_arrival()));
+				// calculate max_{i \in Pred^s(sib)} { ST^max(i) + delay^max(i,sib) }
 				for (const auto& pred : constraints[sib_index].predecessors_start_to_start)
 				{
 					Interval<Time> stimes(0, 0);
@@ -197,6 +212,7 @@ private:
 				if (ready_time == Time_model::constants<Time>::infinity())
 					break;
 
+				// calculate max_{i \in Pred^f(sib)} { FT^max(i) + delay^max(i,sib) }
 				for (const auto& pred : constraints[sib_index].predecessors_finish_to_start)
 				{
 					Interval<Time> ftimes(0, 0);
@@ -216,6 +232,7 @@ private:
 					break;
 
 				// we now account for mutual exclusion constraints between sibling and other jobs
+				// calculate max_{i \in Mutx^s(sib) \cup Omega(v)} { ST^max(i) + delay^max(i,sib) }
 				for (const auto& excl : constraints[sib_index].between_starts)
 				{
 					Interval<Time> stimes(0, 0);
@@ -227,6 +244,7 @@ private:
 				if (ready_time == Time_model::constants<Time>::infinity())
 					break;
 
+				// calculate max_{i \in Mutx^f(sib) \cup Omega(v)} { FT^max(i) + delay^max(i,sib) }
 				for (const auto& excl : constraints[sib_index].between_executions)
 				{
 					Interval<Time> ftimes(0, 0);
