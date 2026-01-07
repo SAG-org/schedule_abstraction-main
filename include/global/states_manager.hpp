@@ -45,33 +45,48 @@ namespace NP {
 			typedef std::deque<Node_ref> Node_refs;
 			typedef std::unordered_map<hash_value_t, Node_refs> Nodes_map;
 #endif
+			typedef std::vector<Nodes_map> Nodes_map_per_depth;
 			typedef std::vector<Node_refs> Nodes_storage;
+
+			// default constructor
+			States_manager() = default;
 
 			/**
 			 * @brief Construct a new States Manager object
-			 * @param depth Maximum depth for node storage
+			 * @param size Maximum size for node storage (number of layers of the SAG it keeps track of)
 			 */
-			States_manager(unsigned int depth)
-			: nodes_storage(depth)
+			States_manager(unsigned int size)
+			: nodes_storage(size)
+			, nodes_by_key(size)
 			{}
 
 			/**
+			 * @brief Set the maximum size for node storage (number of layers of the SAG it keeps track of)
+			 */
+			void set_size(size_t size)
+			{
+				nodes_storage.resize(size);
+				nodes_by_key.resize(size);
+			}
+
+			/**
 			 * @brief Return a new node from the pool
+			 * @param depth Layer of the SAG the nodes belongs to
 			 * @param args Arguments to forward to the Node constructor
 			 * @return Shared pointer to the allocated Node
 			 */
 			template <typename... Args>
-			Node_ref new_node(unsigned int depth, Args&&... args)
+			Node_ref new_node(size_t depth, Args&&... args)
 			{
-				assert(depth < nodes_storage.size());
+				auto d = depth % nodes_storage.size();
 				auto n = node_pool.acquire(std::forward<Args>(args)...);
 				assert(n);
 #ifdef CONFIG_PARALLEL
-				nodes_storage[depth].push(n);
+				nodes_storage[d].push(n);
 #else
-				nodes_storage[depth].push_back(n);
+				nodes_storage[d].push_back(n);
 #endif
-				cache_node(n);
+				cache_node(n, d);
 				return n;
 			}
 
@@ -106,7 +121,12 @@ namespace NP {
 				state_pool.release(s);
 			}
 
-			Node_refs& get_nodes_at_depth(unsigned int depth)
+			/**
+			 * @brief Get all stored nodes at a specific depth (i.e., a specific layer of the SAG)
+			 * @param depth Layer of the SAG from which the nodes must be recovered
+			 * @return Reference to the collection of nodes at the specified depth
+			 */
+			Node_refs& get_nodes_at_depth(size_t depth)
 			{
 				assert(depth < nodes_storage.size());
 				return nodes_storage[depth];
@@ -116,13 +136,15 @@ namespace NP {
 			 * @brief Find a cached node with matching key and scheduled jobs
 			 * 
 			 * @param key Lookup key for the node
+			 * @param depth Layer of the SAG where the node is stored
 			 * @param scheduled_jobs Set of jobs that are marked as dispatched in the node we look for
 			 * @return Pointer to matching node, or nullptr if not found
 			 */
-			Node_ref find_node(hash_value_t key, const Job_set& scheduled_jobs)
+			Node_ref find_node(hash_value_t key, size_t depth, const Job_set& scheduled_jobs)
 			{
-				const auto pair_it = nodes_by_key.find(key);
-				if (pair_it != nodes_by_key.end()) {
+				auto d = depth % nodes_storage.size();
+				const auto pair_it = nodes_by_key[d].find(key);
+				if (pair_it != nodes_by_key[d].end()) {
 					for (Node_ref other : pair_it->second) {
 						if (other->get_scheduled_jobs() == scheduled_jobs) {
 							return other;
@@ -141,14 +163,16 @@ namespace NP {
 			 * new Job_set externally before calling the other find_cached_node function.
 			 * 
 			 * @param key Lookup key for the node
+			 * @param depth Layer of the SAG where the node is stored
 			 * @param old_scheduled_jobs Set of jobs that are marked as dispatched before adding the new job
 			 * @param new_job Index of the new job to include in the scheduled jobs
 			 * @return Pointer to matching node, or nullptr if not found
 			 */
-			Node_ref find_node(hash_value_t key, const Job_set& old_scheduled_jobs, Job_index new_job)
+			Node_ref find_node(hash_value_t key, size_t depth, const Job_set& old_scheduled_jobs, Job_index new_job)
 			{
-				const auto pair_it = nodes_by_key.find(key);
-				if (pair_it != nodes_by_key.end()) {
+				auto d = depth % nodes_storage.size();
+				const auto pair_it = nodes_by_key[d].find(key);
+				if (pair_it != nodes_by_key[d].end()) {
 					Job_set new_sched_jobs{ old_scheduled_jobs, new_job };
 					for (Node_ref other : pair_it->second) {
 						if (other->get_scheduled_jobs() == new_sched_jobs) {
@@ -164,7 +188,9 @@ namespace NP {
 			 */
 			void clear_cache()
 			{
-				nodes_by_key.clear();
+				for (auto& map : nodes_by_key) {
+					map.clear();
+				}
 			}
 
 			/**
@@ -178,13 +204,23 @@ namespace NP {
 			}
 
 			/**
-			 * @brief Clear stored nodes at a specific depth
-			 * @param depth Depth index to clear
+			 * @brief Clear cached nodes at a specific depth
+			 * @param depth Layer of the SAG to clear
 			 */
-			void clear_storage_at_depth(unsigned int depth)
+			void clear_cache_at_depth(size_t depth)
 			{
-				assert(depth < nodes_storage.size());
-				nodes_storage[depth].clear();
+				auto d = depth % nodes_by_key.size();
+				nodes_by_key[d].clear();
+			}
+
+			/**
+			 * @brief Clear stored nodes at a specific depth
+			 * @param depth Layer of the SAG to clear
+			 */
+			void clear_storage_at_depth(size_t depth)
+			{
+				auto d = depth % nodes_storage.size();
+				nodes_storage[d].clear();
 			}
 
 			/**
@@ -214,7 +250,7 @@ namespace NP {
 		private:
 			Object_pool<Node> node_pool;
 			Object_pool<State> state_pool;
-			Nodes_map nodes_by_key;
+			Nodes_map_per_depth nodes_by_key;
 			Nodes_storage nodes_storage;
 
 			/**
@@ -223,17 +259,18 @@ namespace NP {
 			 * Adds the node to the nodes_by_key map for quick lookup.
 			 * 
 			 * @param n Shared pointer to the Node to cache
+			 * @param d Depth index in the cache where the node is stored
 			 */
-			void cache_node(Node_ref n)
+			void cache_node(Node_ref n, size_t d)
 			{
 				assert(n);
 				if (!n) 
 					return;
 				// create a new list if needed, or lookup if already existing
 #ifdef CONFIG_PARALLEL
-				auto res = nodes_by_key.emplace(n->get_key(), Nodes_vec());
+				auto res = nodes_by_key[d].emplace(n->get_key(), Nodes_vec());
 #else
-				auto res = nodes_by_key.emplace(n->get_key(), Node_refs());
+				auto res = nodes_by_key[d].emplace(n->get_key(), Node_refs());
 #endif
 				auto pair_it = res.first;
 				auto& list = pair_it->second;

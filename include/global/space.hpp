@@ -369,7 +369,6 @@ namespace NP {
 #endif
 				, current_job_count(0)
 				, cores_initial_state(cores_initial_state)
-				, states_mgr(2)
 #ifdef CONFIG_COLLECT_SCHEDULE_GRAPH
 				, log(log_opts.log)
 				, logger(log_opts.log_cond)
@@ -408,6 +407,13 @@ namespace NP {
 #ifdef CONFIG_PRUNING
 				config.pruning_active = pruning_active;
 #endif
+				// Initialize the number of layers of the SAG that must be kept track of by the states manager
+				size_t layers = 1;
+				const auto& cond_constr = sp_data.conditional_dispatch_constraints;
+				for (Job_index j = 0; j < jobs.size(); ++j)
+					layers = std::max(layers, cond_constr.get_incompatible_jobs(j).size());
+				states_mgr.set_size(layers+1);
+				
 #ifdef CONFIG_ANALYSIS_EXTENSIONS
 				// check if the MK analysis extension is registered
 				auto mk_ext = problem_extensions.template get<MK_analysis::MK_problem_extension>();
@@ -434,8 +440,7 @@ namespace NP {
 			Node_ref new_node(const unsigned int depth, Args&&... args)
 			{
 				statistics.count_node();
-				unsigned int d = (unsigned int)((current_job_count + depth) % 2);
-				return states_mgr.new_node(d, std::forward<Args>(args)...);
+				return states_mgr.new_node(current_job_count + depth, std::forward<Args>(args)...);
 			}
 
 			/** @brief Create a new state with the given arguments */
@@ -503,7 +508,7 @@ namespace NP {
 			*/
 			Nodes& nodes(const int depth = 0)
 			{
-				return states_mgr.get_nodes_at_depth((current_job_count+ depth) % 2);
+				return states_mgr.get_nodes_at_depth(current_job_count + depth);
 			}
 
 			/** 
@@ -570,8 +575,8 @@ namespace NP {
 								aborted = true;
 								// create a dummy node for explanation purposes
 								auto frange = new_n.get_last_state()->core_availability(pmin) + j.get_cost(pmin);
-								Node_ref next =
-									new_node(1, new_n, j, j.get_job_index(), sp_data);
+								auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+								Node_ref next =	new_node(n_inc_jobs, new_n, j, j.get_job_index(), sp_data);
 								//const CoreAvailability empty_cav = {};
 								State_ref next_s = new_state(
 										*new_n.get_last_state(), j.get_job_index(), frange, frange, new_n.get_scheduled_jobs(),
@@ -826,17 +831,21 @@ namespace NP {
 						update_finish_times(j, ftimes);
 
 						// If be_naive, a new node and a new state should be created for each new job dispatch.
-						if (config.be_naive)
-							next = new_node(1, *n, j, j.get_job_index(), sp_data);
+						if (config.be_naive) {
+							auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+							next = new_node(n_inc_jobs, *n, j, j.get_job_index(), sp_data);
+						}
 
 						// if we do not have a pointer to a node with the same set of scheduled job yet,
 						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
 						if (next == nullptr)
 						{
-							next = states_mgr.find_node(n->next_key(j.get_job_index(), sp_data), n->get_scheduled_jobs(), j.get_job_index());
+							auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+							next = states_mgr.find_node(n->next_key(j.get_job_index(), sp_data), current_job_count + n_inc_jobs, n->get_scheduled_jobs(), j.get_job_index());
 							// If there is no node yet, create one.
-							if (next == nullptr)
-								next = new_node(1, *n, j, j.get_job_index(), sp_data);
+							if (next == nullptr) {
+								next = new_node(n_inc_jobs, *n, j, j.get_job_index(), sp_data);
+							}
 						}
 
 						// next should always exist at this point, possibly without states in it
@@ -1009,10 +1018,14 @@ namespace NP {
 #else
 					unsigned long long n = exploration_front.size();
 #endif
-					if (n == 0)
-					{
-						aborted = true;
-						break;
+					if (n == 0) {
+						// exploration front is empty, nothing more to explore at that depth
+						// clean up the state cache if necessary
+						if (!config.be_naive)
+							states_mgr.clear_cache_at_depth(current_job_count);
+						// advance to next depth
+						current_job_count++;
+						continue;
 					}
 
 					// keep track of exploration front width (main thread only - no protection needed)
@@ -1093,7 +1106,7 @@ namespace NP {
 
 					// clean up the state cache if necessary
 					if (!config.be_naive)
-						states_mgr.clear_cache();
+						states_mgr.clear_cache_at_depth(current_job_count);
 
 					nodes().clear();
 					current_job_count++;
