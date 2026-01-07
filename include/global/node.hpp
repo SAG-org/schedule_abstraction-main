@@ -68,7 +68,7 @@ namespace NP {
 			/** Set of jobs that have already been dispatched (true for all states contained in this node). */
 			Job_set scheduled_jobs;
 			/** Number of jobs already dispatched (cached for quick access). */
-			unsigned int num_jobs_scheduled;
+			unsigned long long num_jobs_scheduled;
 			/** Tracker of the set of jobs that have all their predecessors completed and are not dispatched yet. */
 			Ready_jobs_tracker<Time> ready_successor_jobs;
 			/** Tracker of jobs that have at least one unscheduled successor with start constraints. */
@@ -293,7 +293,7 @@ namespace NP {
 			 * @brief Return number of jobs that have been dispatched until reach this node.
 			 * @return number of dispatched jobs
 			 */
-			const unsigned int number_of_scheduled_jobs() const
+			const long long number_of_scheduled_jobs() const
 			{
 				return num_jobs_scheduled;
 			}

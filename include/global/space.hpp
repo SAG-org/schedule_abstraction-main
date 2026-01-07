@@ -352,7 +352,7 @@ namespace NP {
 				, bool pruning_active = false
 				, const Pruning_condition& pruning_cond = Pruning_condition()
 #endif
-			)	: sp_data(jobs, edges, aborts, mutexes, cores_initial_state.size())
+			)	: sp_data(jobs, edges, aborts, mutexes, (unsigned int)cores_initial_state.size())
 				, aborted(false)
 				, observed_deadline_miss(false)
 				, deadline_miss_state(nullptr)
@@ -575,7 +575,7 @@ namespace NP {
 								aborted = true;
 								// create a dummy node for explanation purposes
 								auto frange = new_n.get_last_state()->core_availability(pmin) + j.get_cost(pmin);
-								auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+								unsigned int n_inc_jobs = (unsigned int) sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
 								Node_ref next =	new_node(n_inc_jobs, new_n, j, j.get_job_index(), sp_data);
 								//const CoreAvailability empty_cav = {};
 								State_ref next_s = new_state(
@@ -832,7 +832,7 @@ namespace NP {
 
 						// If be_naive, a new node and a new state should be created for each new job dispatch.
 						if (config.be_naive) {
-							auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+							unsigned int n_inc_jobs = (unsigned int) sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
 							next = new_node(n_inc_jobs, *n, j, j.get_job_index(), sp_data);
 						}
 
@@ -840,7 +840,7 @@ namespace NP {
 						// try to find an existing node with the same set of scheduled jobs. Otherwise, create one.
 						if (next == nullptr)
 						{
-							auto n_inc_jobs = sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
+							unsigned int n_inc_jobs = (unsigned int) sp_data.conditional_dispatch_constraints.get_incompatible_jobs(j.get_job_index()).size();
 							next = states_mgr.find_node(n->next_key(j.get_job_index(), sp_data), current_job_count + n_inc_jobs, n->get_scheduled_jobs(), j.get_job_index());
 							// If there is no node yet, create one.
 							if (next == nullptr) {
