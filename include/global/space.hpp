@@ -772,13 +772,14 @@ namespace NP {
 						continue;
 
 					// calculate when will the job be ready at the earliest
-					Time rt = sp_data.earliest_ready_time(*n, *s, j);
-					if (t_high_wos <= rt)   
+					auto rt = sp_data.ready_times(*n, *s, j);
+					Time rt_min = rt.min();
+					if (t_high_wos <= rt_min)   
 						continue; // a higher priority source job will be ready before j can start, j will not be dispatched next
 					
 					// calculate t_wc: earliest time by which a job is ready and enough cores are available to execute it
 					Time t_wc = std::max(s->core_availability().max(), next_certain_job_ready_time(*n, *s));
-					if (t_wc < rt)
+					if (t_wc < rt_min)
 						continue; // another job will be dispatched before j is ready, j will not be dispatched next
 
 					// check for all possible parallelism levels of the moldable gang job j 
@@ -789,12 +790,13 @@ namespace NP {
 					{
 						unsigned int p = it->first;
 						// calculate earliest time j may start executing in state s on p cores
-						auto at = s->core_availability(p).min();
-						if (t_wc < at)
+						auto at = s->core_availability(p);
+						Time at_min = at.min();
+						if (t_wc < at_min)
 							break; // another job will be dispatched before enough cores are free to dispatch j, j will not be dispatched next on p or more cores
-						if (t_high_wos <= at)   
+						if (t_high_wos <= at_min)   
 							break; // a higher priority source job will be ready before enough cores are free to dispatch j, j will not be dispatched next
-						Time est = std::max(rt, at);
+						Time est = std::max(rt_min, at_min);
 						
 						// Calculate t_high
 						Time t_high_succ = sp_data.next_certain_higher_priority_successor_job_ready_time(*n, *s, j, p, est);
@@ -814,7 +816,8 @@ namespace NP {
 							continue; // j will be started with higher parallelism than p
 						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << std::endl);
 						// latest time j may start executing in state s on p cores
-						Time lst = latest_start_times(*n, *s, j, t_wc, t_high, t_avail, p);
+						Time lst = std::min(std::max(rt.max(), at.max()), std::min(t_wc,
+									std::min(t_high, t_avail) - Time_model::constants<Time>::epsilon()));
 						Interval<Time> stimes(est, lst);
 						//calculate the job finish time interval
 						auto exec_time = it->second;
