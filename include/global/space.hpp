@@ -666,38 +666,6 @@ namespace NP {
 				return std::min(t_wos, t_ws);
 			}
 
-			// assumes all predecessors of j have been dispatched
-			Time earliest_start_times( const Node& n, const State& s, 
-				const Job<Time>& j, const unsigned int ncores = 1) const
-			{
-				auto rt = sp_data.earliest_ready_time(n, s, j);
-				auto at = s.core_availability(ncores).min();
-				return std::max(rt, at);
-			}
-
-			// assumes all predecessors of j have been dispatched
-			Time latest_start_times( const Node& n, const State& s, 
-				const Job<Time>& j, const Time t_wc, const Time t_high,
-				const Time t_avail, const unsigned int ncores = 1) const
-			{
-				return std::min(t_wc,
-					std::min(t_high, t_avail) - Time_model::constants<Time>::epsilon());
-			}
-
-			// assumes all predecessors of j have been dispatched
-			// NOTE: we don't use Interval<Time> here because the
-			//       Interval c'tor sorts its arguments.
-			std::pair<Time, Time> start_times( const Node& n, const State& s, 
-				const Job<Time>& j, const Time t_wc, const Time t_high,
-				const Time t_avail, const unsigned int ncores = 1) const
-			{
-				Time est = earliest_start_times(n, s, j, ncores);
-				Time lst = latest_start_times(n, s, j, t_wc, t_high, t_avail, ncores);
-				DM("est: " << est << std::endl);
-				DM("lst: " << lst << std::endl);
-				return { est, lst };
-			}
-
 			Time earliest_job_abortion(const Abort_action<Time>& a)
 			{
 				return a.earliest_trigger_time() + a.least_cleanup_cost();
