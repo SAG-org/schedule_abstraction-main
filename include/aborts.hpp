@@ -7,9 +7,7 @@ namespace NP {
 
 	template<class Time>
 	class Abort_action {
-
 	public:
-
 		Abort_action(JobID id,
 		             Interval<Time> trigger_time,
 		             Interval<Time> cleanup_cost)
@@ -42,6 +40,16 @@ namespace NP {
 		Time maximum_cleanup_cost() const
 		{
 			return cleanup_cost.max();
+		}
+
+		Time earliest_abort_time() const
+		{
+			return earliest_trigger_time() + least_cleanup_cost();
+		}
+
+		Time latest_abort_time() const
+		{
+			return latest_trigger_time() + maximum_cleanup_cost();
 		}
 
 	private:

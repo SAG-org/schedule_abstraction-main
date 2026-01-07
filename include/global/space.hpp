@@ -666,16 +666,6 @@ namespace NP {
 				return std::min(t_wos, t_ws);
 			}
 
-			Time earliest_job_abortion(const Abort_action<Time>& a)
-			{
-				return a.earliest_trigger_time() + a.least_cleanup_cost();
-			}
-
-			Time latest_job_abortion(const Abort_action<Time>& a)
-			{
-				return a.latest_trigger_time() + a.maximum_cleanup_cost();
-			}
-
 			/**
 			 * @brief Calculate the possible abort time interval for job j given its start and finish time intervals.
 			 * @param j job to calculate the abort time for
@@ -700,8 +690,8 @@ namespace NP {
 					else {
 						// The job can start its execution but we check
 						// if the job must be aborted before it finishes
-						auto eat = earliest_job_abortion(*abort_action);
-						auto lat = latest_job_abortion(*abort_action);
+						auto eat = abort_action->earliest_abort_time();
+						auto lat = abort_action->latest_abort_time();
 						return Interval<Time>{ std::min(eft, eat), std::min(lft, lat) };
 					}
 				}
