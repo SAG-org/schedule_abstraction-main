@@ -13,7 +13,7 @@ namespace NP {
     class Conditional_dispatch_constraints {
 		using Workload   = typename Job<Time>::Job_set;
         typedef const Job<Time>* Job_ref;
-        typedef std::vector<Job_index> Incompatible_jobs_set;
+        typedef std::set<Job_index> Incompatible_jobs_set;
         typedef std::vector<Job_ref> Conditional_siblings;
 
 		// The set of conditional siblings for each job. The set includes the job itself. If the job has no conditional siblings, the set only includes the job itself.
@@ -58,7 +58,7 @@ namespace NP {
          */
         bool are_incompatible(Job_index j1, Job_index j2) const {
             const auto& incomp_set = incompatible_jobs[j1];
-            return std::find(incomp_set.begin(), incomp_set.end(), j2) != incomp_set.end();
+            return incomp_set.count(j2) > 0;
         }
 
     private:
@@ -116,13 +116,13 @@ namespace NP {
 							Job_index sib_index = sibs[s]->get_job_index();
 							for (Job_index uj : union_set) {
 								if (sib_descendants[s].count(uj) == 0) {
-									incompatible_jobs[sib_index].push_back(uj);
+									incompatible_jobs[sib_index].emplace(uj);
 								}
 							}
 						}
 					} else {
 						// non-conditional siblings have only themselves as incompatible
-						incompatible_jobs[i].push_back(i); 
+						incompatible_jobs[i].emplace(i); 
 					}
 				}
 			}

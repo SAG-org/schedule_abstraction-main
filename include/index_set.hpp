@@ -34,8 +34,8 @@ namespace NP {
 			}
 
 			// derive a new set by "cloning" an existing set and adding a set of indices
-			Index_set(const Index_set& from, const std::vector<std::size_t>& indices)
-				: the_set(std::max(from.the_set.size(), ((indices.empty() ? 0 : indices.back()) / 64) + 1))
+			Index_set(const Index_set& from, const std::set<std::size_t>& indices)
+				: the_set(std::max(from.the_set.size(), ((indices.empty() ? 0 : *indices.rbegin()) / 64) + 1))
 			{
 				std::copy(from.the_set.begin(), from.the_set.end(), the_set.begin());
 				for (auto i : indices)
@@ -52,10 +52,10 @@ namespace NP {
 			}
 
 			// update the current set by "cloning" an existing set and adding a set of indices
-			void set(const Index_set& from, const std::vector<std::size_t>& indices)
+			void set(const Index_set& from, const std::set<std::size_t>& indices)
 			{
 				the_set.clear();
-				the_set.resize(std::max(from.the_set.size(), ((indices.empty() ? 0 : indices.back()) / 64) + 1));
+				the_set.resize(std::max(from.the_set.size(), ((indices.empty() ? 0 : *indices.rbegin()) / 64) + 1));
 				std::copy(from.the_set.begin(), from.the_set.end(), the_set.begin());
 				for (auto i : indices)
 					set_bit(i, true);
