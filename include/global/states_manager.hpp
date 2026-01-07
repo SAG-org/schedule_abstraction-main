@@ -128,8 +128,7 @@ namespace NP {
 			 */
 			Node_refs& get_nodes_at_depth(size_t depth)
 			{
-				assert(depth < nodes_storage.size());
-				return nodes_storage[depth];
+				return nodes_storage[depth % nodes_storage.size()];
 			}
 
 			/**
