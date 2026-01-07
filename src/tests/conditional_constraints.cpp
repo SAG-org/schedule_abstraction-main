@@ -9,6 +9,7 @@ using namespace NP;
 namespace {
 using Time = dtime_t;
 using JobT = Job<Time>;
+using Job_ref = const JobT*;
 using Workload = std::vector<JobT>;
 using Constraints = std::vector<Precedence_constraint<Time>>;
 
@@ -16,7 +17,7 @@ JobT make_job(unsigned long id, JobT::Job_type type, Job_index idx) {
     return JobT{id, Interval<Time>(0, 0), Interval<Time>(1, 1), 10, 0, idx, 0, type};
 }
 
-std::set<Job_index> to_set(const std::vector<Job_index>& v) {
+std::set<Job_ref> to_set(const std::vector<Job_ref>& v) {
     return {v.begin(), v.end()};
 }
 } // namespace
@@ -41,8 +42,8 @@ TEST_CASE("conditional siblings are mutually incompatible") {
     CHECK_FALSE(constraints.has_conditional_siblings(0));
     CHECK_FALSE(constraints.has_conditional_siblings(3));
 
-    auto a_incompat = to_set(constraints.get_incompatible_jobs(1));
-    auto b_incompat = to_set(constraints.get_incompatible_jobs(2));
+    auto a_incompat = constraints.get_incompatible_jobs(1);
+    auto b_incompat = constraints.get_incompatible_jobs(2);
 
     CHECK(a_incompat.count(1) == 1);
     CHECK(a_incompat.count(2) == 1);
@@ -71,25 +72,38 @@ TEST_CASE("all conditional branches exclude one another") {
     CHECK(constraints.has_conditional_siblings(3));
     CHECK_FALSE(constraints.has_conditional_siblings(0));
 
-    std::set<Job_index> siblings{1, 2, 3};
+    std::set<Job_ref> siblings{&jobs[1], &jobs[2], &jobs[3]};
 
-    auto sib1 = to_set(*constraints.get_conditional_siblings(1));
-    auto sib2 = to_set(*constraints.get_conditional_siblings(2));
-    auto sib3 = to_set(*constraints.get_conditional_siblings(3));
-    CHECK(sib1 == siblings);
-    CHECK(sib2 == siblings);
-    CHECK(sib3 == siblings); 
+    for (int i=1; i<=3; ++i) {
+        CHECK(constraints.has_conditional_siblings(i));
+        auto sib = to_set(*constraints.get_conditional_siblings(i));
+        CHECK(sib == siblings);
+    }
 
-    auto sib0 = constraints.get_conditional_siblings(0);
-    CHECK(sib0 == nullptr);
+    CHECK_FALSE(constraints.has_conditional_siblings(0));
+    auto sib0 = to_set(*constraints.get_conditional_siblings(0));
+    CHECK(sib0 == std::set<Job_ref>{&jobs[0]});
 
-    auto inc1 = to_set(constraints.get_incompatible_jobs(1));
-    auto inc2 = to_set(constraints.get_incompatible_jobs(2));
-    auto inc3 = to_set(constraints.get_incompatible_jobs(3));
+    std::set<Job_index> expected{1,2,3};
+    auto inc1 = constraints.get_incompatible_jobs(1);
+    auto inc2 = constraints.get_incompatible_jobs(2);
+    auto inc3 = constraints.get_incompatible_jobs(3);
+    CHECK(inc1 == expected);
+    CHECK(inc2 == expected);
+    CHECK(inc3 == expected);
 
-    CHECK(inc1 == siblings);
-    CHECK(inc2 == siblings);
-    CHECK(inc3 == siblings);
+    CHECK(constraints.are_incompatible(1,2));
+    CHECK(constraints.are_incompatible(2,1));
+    CHECK(constraints.are_incompatible(2,3));
+    CHECK(constraints.are_incompatible(3,2));
+    CHECK(constraints.are_incompatible(1,3));
+    CHECK(constraints.are_incompatible(3,1));
+    CHECK_FALSE(constraints.are_incompatible(0,1));
+    CHECK_FALSE(constraints.are_incompatible(1,0));
+    CHECK_FALSE(constraints.are_incompatible(0,2));
+    CHECK_FALSE(constraints.are_incompatible(2,0));
+    CHECK_FALSE(constraints.are_incompatible(0,3));
+    CHECK_FALSE(constraints.are_incompatible(3,0));
 }
 
 TEST_CASE("complex c-dag incompatible jobs") {
@@ -120,6 +134,20 @@ TEST_CASE("complex c-dag incompatible jobs") {
      * - Job 7 : {7}
      * - Job 8 : {8}
      * - ...
+     * Incompatible jobs with pending successors:
+     * - Job 0: {0}
+     * - Job 1: {1}
+     * - Job 2: {2,5,9}
+     * - Job 3: {2,3,4}
+     * - Job 4: {4,6,7}
+     * - Job 5 : {5,9}
+     * - Job 6 : {6,7}
+     * - Job 7 : {7}
+     * - Job 8 : {8}
+     * - Job 9 : {9}
+     * - Job 10 : {10}
+     * - Job 11 : {}
+     * - Job 12 : {}
      */
     Workload jobs;
     jobs.push_back(make_job(0, JobT::Job_type::NORMAL, 0));
@@ -155,7 +183,9 @@ TEST_CASE("complex c-dag incompatible jobs") {
     precs.emplace_back(JobID(10, 0), JobID(12, 0), Interval<Time>(0, 0), jobs);
 
     Conditional_dispatch_constraints<Time> constraints(jobs, precs);
-    std::set<Job_index> expected_siblings_1 = {2,3,4};
+
+    // Check conditional siblings are correctly identified
+    std::set<Job_ref> expected_siblings_1 = {&jobs[2], &jobs[3], &jobs[4]};
     CHECK(constraints.has_conditional_siblings(2));
     CHECK(to_set(*constraints.get_conditional_siblings(2)) == expected_siblings_1);
     CHECK(constraints.has_conditional_siblings(3));
@@ -163,7 +193,7 @@ TEST_CASE("complex c-dag incompatible jobs") {
     CHECK(constraints.has_conditional_siblings(4));
     CHECK(to_set(*constraints.get_conditional_siblings(4)) == expected_siblings_1);
 
-    std::set<Job_index> expected_siblings_2 = {5,6};
+    std::set<Job_ref> expected_siblings_2 = {&jobs[5], &jobs[6]};
     CHECK(constraints.has_conditional_siblings(5));
     CHECK(to_set(*constraints.get_conditional_siblings(5)) == expected_siblings_2);
     CHECK(constraints.has_conditional_siblings(6));
@@ -178,6 +208,7 @@ TEST_CASE("complex c-dag incompatible jobs") {
     CHECK_FALSE(constraints.has_conditional_siblings(11));
     CHECK_FALSE(constraints.has_conditional_siblings(12));
 
+    // Check incompatible jobs are correctly identified
     std::vector<std::set<Job_index>> expected_incompatibles = {
         {0},
         {1},
@@ -194,7 +225,32 @@ TEST_CASE("complex c-dag incompatible jobs") {
         {12}
     };
     for (Job_index j = 0; j < jobs.size(); ++j) {
-        auto incompat_set = to_set(constraints.get_incompatible_jobs(j));
+        const auto& incompat_set = constraints.get_incompatible_jobs(j);
         CHECK(incompat_set == expected_incompatibles[j]);
+    }
+
+    // Check incompatible jobs with pending successors are correctly identified
+    std::vector<std::set<Job_index>> expected_incompatibles_with_pending_succ = {
+        {0},
+        {1},
+        {2,5,9},
+        {2,3,4},
+        {4,6,7},
+        {5,9},
+        {6,7},
+        {7},
+        {8},
+        {9},
+        {10},
+        {},
+        {}
+    };
+    for (Job_index j = 0; j < jobs.size(); ++j) {
+        const auto& incompat_set_w_pend = constraints.get_incompatible_jobs_with_pending_successors(j);
+        CHECK(incompat_set_w_pend == expected_incompatibles_with_pending_succ[j]);
+        const auto& incompat_set = constraints.get_incompatible_jobs(j);
+        for (Job_index k : incompat_set_w_pend) {
+            CHECK(incompat_set.count(k) > 0);
+        }
     }
 }
