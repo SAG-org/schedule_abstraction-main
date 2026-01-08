@@ -161,7 +161,9 @@ public:
 		// if there are more freed cores than cores used by the dispatched job, the additional cores must be available when the job starts
 		if (ncores_freed > ncores_used) {
 			for (unsigned int i = ncores_used; i < ncores_freed; i++) {
+				// A_i^min(v') = EST(j,v)
 				pa[pa_idx++] = est;
+				// A_i^max(v') = min(LST(j,v), max(EST(j,v), A_i^max(v)))
 				ca[ca_idx++] = std::min(lst, std::max(est, from.core_avail[i].max()));
 			}
 		}
@@ -174,31 +176,37 @@ public:
 			if (!eft_added_to_pa && eft < from.core_avail[i].min()) {
 				// Insert earliest finish time of the dispatched jobs `ncores_used` times since it occupies that many cores
 				for (unsigned int p = 0; p < ncores_used; p++) {
+					// A_i^min(v') = EFT(j,v)
 					pa[pa_idx++] = eft;
 				}
 				eft_added_to_pa = true;
 			}
+			// A_i^min(v') = max(EST(j,v), A_i^min(v))
 			pa[pa_idx++] = std::max(est, from.core_avail[i].min());
 			
 			// Add job's finish time to certainly-available list
 			if (!lft_added_to_ca && lft < from.core_avail[i].max()) {
 				// Insert latest finish time of the dispatched jobs `ncores_used` times since it occupies that many cores
 				for (unsigned int p = 0; p < ncores_used; p++) {
+					// A_i^max(v') = LFT(j,v)
 					ca[ca_idx++] = lft;
 				}
 				lft_added_to_ca = true;
 			}
+			// A_i^max(v') = max(EST(j,v), A_i^max(v))
 			ca[ca_idx++] = std::max(est, from.core_avail[i].max());
 		}
 		
 		// Ensure job finish times are added if not yet
 		if (!eft_added_to_pa) {
 			for (unsigned int p = 0; p < ncores_used; p++) {
+				// A_i^min(v') = EFT(j,v)
 				pa[pa_idx++] = eft;
 			}
 		}
 		if (!lft_added_to_ca) {
 			for (unsigned int p = 0; p < ncores_used; p++) {
+				// A_i^max(v') = LFT(j,v)
 				ca[ca_idx++] = lft;
 			}
 		}
@@ -222,6 +230,8 @@ public:
 	{
 		assert(core_avail.size() == other.core_avail.size());
 		for (unsigned int i = 0; i < core_avail.size(); i++) {
+			// widen availability interval to include other's interval
+			// A_i(v') = [ min( A_i^min(v), A_i^min(u) ), max( A_i^max(v), A_i^max(u) ) ]
 			core_avail[i] |= other.core_avail[i];
 		}
 	}

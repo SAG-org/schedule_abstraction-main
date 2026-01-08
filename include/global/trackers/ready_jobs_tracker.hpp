@@ -12,9 +12,8 @@ namespace NP {
 namespace Global {
 
 /**
- * @brief Tracks ready successor jobs (all predecessors completed, not yet dispatched)
- * 
- * This list is maintained in sorted order for efficient merging and lookup.
+ * @brief Tracks ready successor jobs (all predecessors completed, not yet dispatched) 
+ * NOTE: This list is maintained sorted by priority (highest priority first) for efficient merging and lookup.
  */
 template<class Time>
 class Ready_jobs_tracker
@@ -43,7 +42,9 @@ public:
 	/**
 	 * @brief Update ready successors after dispatching a job.
 	 * 
-	 * Maintains priority-sorted order of ready jobs.
+	 * calculate R^pot(v') = (R^pot(v) \ Inc(j)) ∪ {j' | j' ∈ Succ(j) ∧ Pred(j') ⊆ Omega(v')}
+	 * Maintain R^pot(v') sorted in priority order (highest priority first).
+	 * Store R^pot(v') in ready_successor_jobs.
 	 * 
 	 * @param from Previous tracker state
 	 * @param dispatched_job Index of job being dispatched
@@ -67,7 +68,7 @@ public:
 			job_constraints.finish_to_successors_start.size());
 		
 		// update list of ready jobs by excluding dispatched job and 
-        // adding the ready successors of the dispatced job
+        // adding the ready successors of the dispatched job
 		// Both lists are sorted by priority (non-increasing)
 		auto old_it = from.ready_successor_jobs.begin();
 		auto old_end = from.ready_successor_jobs.end();
@@ -83,18 +84,21 @@ public:
 		auto finish_succ_it = job_constraints.finish_to_successors_start.begin();
 		auto finish_succ_end = job_constraints.finish_to_successors_start.end();
 		
+		// Helper to advance iterator to next ready job
         auto get_next_ready_job = [&](auto& it, const auto it_end) {
-            while (it != it_end)
-            {
+            while (it != it_end) {
                 if (is_ready(it->reference_job->get_job_index(), constraints, scheduled_jobs))
                     break;
                 ++it;
             }
         };
 
+		// find first ready jobs in Succ^s(j) and Succ^f(j)
         get_next_ready_job(start_succ_it, start_succ_end);
         get_next_ready_job(finish_succ_it, finish_succ_end);
-		// Three-way merge: old ready jobs, start successors, finish successors
+
+		// Three-way merge: old ready jobs, start successors, finish successors that are ready
+		// such that the resulting list ready_successor_jobs is sorted by priority
 		while (old_it != old_end || start_succ_it != start_succ_end || 
 		       finish_succ_it != finish_succ_end)
 		{
@@ -152,11 +156,12 @@ public:
 
 private:
 	// Jobs that have all predecessors completed and are not dispatched yet
-	// Sorted by priority (non-increasing)
+	// Sorted by priority (highest priority first)
 	Ready_jobs_list ready_successor_jobs;
 
 	/**
-	 * @brief Check if a job is ready (all predecessors dispatched).
+	 * @brief Check if a job is ready (all predecessors dispatched)
+	 * return true if (Pred^s(j) ⊆ Omega(v)) ∧ (Pred^f(j) ⊆ Omega(v))
 	 */
 	bool is_ready(
 		Job_index job_idx,
@@ -165,20 +170,18 @@ private:
 	{
 		const auto& job_constraints = constraints[job_idx];
 		
-		// Check start-to-start predecessors
+		// Check Pred^s(j) ⊆ Omega(v)
 		for (const auto& pred : job_constraints.predecessors_start_to_start) {
 			if (!scheduled_jobs.contains(pred.reference_job->get_job_index())) {
 				return false;
 			}
-		}
-		
-		// Check finish-to-start predecessors
+		}		
+		// Check Pred^f(j) ⊆ Omega(v)
 		for (const auto& pred : job_constraints.predecessors_finish_to_start) {
 			if (!scheduled_jobs.contains(pred.reference_job->get_job_index())) {
 				return false;
 			}
-		}
-		
+		}		
 		return true;
 	}
 };

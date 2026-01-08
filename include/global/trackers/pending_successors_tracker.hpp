@@ -128,7 +128,7 @@ private:
                                         disp_job_constraints.between_starts : 
                                         disp_job_constraints.between_executions;
             for (const auto& excl : mutual_exclusions) {
-                // if the job we have mutual exclusion with has not been dispatched yet, 
+                // if the job we has a mutual exclusion that has not been dispatched yet, 
                 // then we account for the constraint
                 if (!scheduled_jobs.contains(excl.reference_job->get_job_index())) {
                     // at least, one mutual exclusion constraint is pending
@@ -204,7 +204,7 @@ private:
                     job_constraints.between_starts :
                     job_constraints.between_executions;
                 for (const auto& excl : mutual_exclusions) {
-                    // if the job we have mutual exclusion with has not been dispatched yet,
+                    // if the job we has a mutual exclusion that has not been dispatched yet,
                     if (!scheduled_jobs.contains(excl.reference_job->get_job_index())) {
                         // then we still have a pending successor
                         result.push_back(job);

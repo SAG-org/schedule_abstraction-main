@@ -56,6 +56,13 @@ public:
 				if (it == from.job_times.end() || it->job_idx > job)
 					continue;
 				
+				// ST^min(job,v') = ST^min(job,v)
+				// ST^max(job,v') = 
+				// \begin{cases}
+				//	 min( ST^max(job,v), LST(j,v) - delay_min(job,j) ) & job \in Pred^s(j) U Mutx^s(j) \\
+				//	 ST^max(job,v) & \text{otherwise}
+				// \end{cases}
+
 				// if job was already dispatched and job must start at least delay_min time units before the newly dispatched job starts,
 				// then job should certainly have started delay_min time units before the newly dispatched job certainly starts
 				Time min_delay = constraints.get_min_delay_after_start_of(job);

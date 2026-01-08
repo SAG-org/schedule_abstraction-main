@@ -61,7 +61,7 @@ public:
 	 * @brief Update running jobs after dispatching a new job.
 	 * 
 	 * This method:
-	 * 1. Filters out jobs from previous state that are certainly finished
+	 * 1. Filters out jobs from previous state that are possibly finished (FT^min(job,v) <= LST(j,v) or job \in Pred(j) where j is the newly dispatched job)
 	 * 2. Adds the newly dispatched job
 	 * 3. Keeps the vector sorted by job index
 	 * 4. Counts core used by predecessors that were running in the previous state

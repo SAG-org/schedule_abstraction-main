@@ -659,10 +659,22 @@ namespace NP {
 			}
 
 			// find next time by which a job is certainly ready in system state 's'
+			// return min { min_{ j \in SeqSourceJobs \ Omega(s) } { r^max(j) },
+			//				min_{j \in GangSourceJobs \ Omega(s)} { max{ r^max(j), A^max_p^min(j)(s)) } },
+			//			  	min_{ j \in R^pot(s)} { max_{sib \in CondSibs(j)} {
+			//											 max{ r^max(j), 
+			//											 	  A^max_p^min(j)(s),
+	  		//					 						 	  max_{i \in Pred^s(j)} { ST^max(i) + delay^max(i,j) }, 
+	  		//					 						 	  max_{i \in Pred^f(j)} { FT^max(i) + delay^max(i,j) }, 
+	  		//					 						 	  max_{i \in Mutx^s(j) \cup Omega(s)} { ST^max(i) + delay^max(i,j) }, 
+	  		//					 						 	  max_{i \in Mutx^f(j) \cup Omega(s)} { FT^max(i) + delay^max(i,j) } } } } }
+			// where SeqSourceJobs = { j | Pred(j) = emptyset and p^min(j) = 1 } and GangSourceJobs = { j | Pred(j) = emptyset and p^min(j) > 1 }
 			Time next_certain_job_ready_time(const Node& n, const State& s) const
 			{
-				Time t_ws = std::min(s.next_certain_gang_source_job_dispatch(), s.next_certain_successor_jobs_dispatch());
+				// calculate min_{ j \in SeqSourceJobs \ Omega(s) } { r^max(j) }
 				Time t_wos = n.get_next_certain_sequential_source_job_release();
+				// calculate the rest of the above equation
+				Time t_ws = std::min(s.next_certain_gang_source_job_dispatch(), s.next_certain_successor_jobs_dispatch());
 				return std::min(t_wos, t_ws);
 			}
 
@@ -736,6 +748,7 @@ namespace NP {
 						continue; // a higher priority source job will be ready before j can start, j will not be dispatched next
 					
 					// calculate t_wc: earliest time by which a job is ready and enough cores are available to execute it
+					// t_wc(s) = max(A^max_1(s), min_{j' \notin Omega(s)}(max{R^max(j',s), A^max_p^min(j')(s)}))
 					Time t_wc = std::max(s->core_availability().max(), next_certain_job_ready_time(*n, *s));
 					if (t_wc < rt_min)
 						continue; // another job will be dispatched before j is ready, j will not be dispatched next
@@ -754,6 +767,7 @@ namespace NP {
 							break; // another job will be dispatched before enough cores are free to dispatch j, j will not be dispatched next on p or more cores
 						if (t_high_wos <= at_min)   
 							break; // a higher priority source job will be ready before enough cores are free to dispatch j, j will not be dispatched next
+						// EST = max{ r^min(j), A^max_p(s) }
 						Time est = std::max(rt_min, at_min);
 						
 						// Calculate t_high
@@ -767,19 +781,23 @@ namespace NP {
 						// If j can execute on ncores+k cores, then 
 						// the scheduler will start j on ncores only if 
 						// there isn't ncores+k cores available
-						Time t_avail = Time_model::constants<Time>::infinity();
-						if (p < j.get_max_parallelism())
-							t_avail = s->core_availability(std::next(it)->first).max();
+						Time t_avail = (p == j.get_max_parallelism()) ? Time_model::constants<Time>::infinity() : s->core_availability(std::next(it)->first).max();
 						if (t_avail <= est)
 							continue; // j will be started with higher parallelism than p
-						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << std::endl);
+						DM("=== t_high = " << t_high << ", t_wc = " << t_wc << ", t_avail = " << t_avail << std::endl);
+						
 						// latest time j may start executing in state s on p cores
+						// LST = min{ max{r^max(j), A^max_p(s)}, t_wc(s), t_high(j,p,s)-eps, t_avail(p,s)-eps }
+						// where eps is 1 for discrete time and the smallest representable time value for dense time
 						Time lst = std::min(std::max(rt.max(), at.max()), std::min(t_wc,
 									std::min(t_high, t_avail) - Time_model::constants<Time>::epsilon()));
 						Interval<Time> stimes(est, lst);
+
 						//calculate the job finish time interval
 						auto exec_time = it->second;
+						// EFT = EST + C^min(j,p)
 						Time eft = est + exec_time.min();
+						// LFT = LST + C^max(j,p)
 						Time lft = lst + exec_time.max();
 
 						// check for possible abort actions
@@ -870,6 +888,7 @@ namespace NP {
 				auto avail_max = n->latest_core_availability();
 				// upper bound on the latest time by which a work-conserving scheduler
 				// certainly schedules some job
+				// upbnd_t_wc = max_{v \in node} { max( A^max_m(v), next_certainly_ready_job(v) ) }
 				auto upbnd_t_wc = std::max(avail_max, nxt_ready_job);
 
 				DM(n << std::endl);
@@ -880,6 +899,7 @@ namespace NP {
 
 				//check all jobs that may be eligible to be dispatched next
 				// part 1: check source jobs (i.e., jobs without precedence constraints) that are potentially eligible
+				// 		   i.e., for all j | j \notin Omega(v) and r^min(j) <= upbnd_t_wc and Pred(j) = emptyset
 				for (auto it = sp_data.jobs_by_earliest_arrival.lower_bound(n->earliest_job_release());
 					it != sp_data.jobs_by_earliest_arrival.end();
 					it++)
@@ -909,6 +929,7 @@ namespace NP {
 					found_one |= dispatch(n, j, t_high_wos);
 				}
 				// part 2: check ready successor jobs (i.e., jobs with all precedence constraints fulfilled) that are potentially eligible
+				//	   	   i.e., for all j | j \in R^pot(v) and r^min(j) <= upbnd_t_wc
 				for (const auto pj : n->get_ready_successor_jobs())
 				{
 					const Job<Time>& j = *pj;

@@ -59,9 +59,17 @@ public:
 				Time job_eft = it->time_interval.min();
 				Time job_lft = it->time_interval.max();
 				
-				// If there is a single-core, we know that jobs dispatched in the past
-				// must finish before the new job can start
+				// FT^min(job,v') = FT^min(job,v)
+				// FT^max(job,v') = 
+				// \begin{cases}
+				//	 LST(j,v) & m=1 \text{i.e., single core} \\
+				//   min( FT^max(job,v), LST(j,v) - delay_min(job,j) ) & m>1 \wedge job \in Pred^f(j) U Mutx^f(j) \\
+				//	 FT^max(job,v) & \text{otherwise}
+				// \end{cases}
 				if (single_core && job_lft > lst) {
+					// If there is a single-core, we know that jobs dispatched in the past
+					// must finish before the new job can start
+					// FT^max(job,v') = LST(j,v)
 					job_lft = lst;
 				}
 				else {
