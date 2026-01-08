@@ -95,6 +95,8 @@ namespace NP {
 		Interval<Time> arrival; // arrival time window
 		Interval<unsigned int> parallelism; // on which range of core numbers can it run in parallel
 		Cost exec_time; // execution time range depending on the number of cores assigned to the job when it executes
+		Time bcet; // best-case execution time for any level of parallelism (derived from exec_time)
+		Time wcet; // worst-case execution time for any level of parallelism (derived from exec_time)
 		Time deadline; // absolute deadline
 		Priority priority; // job priority
 		JobID id; // unique job identifier
@@ -141,6 +143,14 @@ namespace NP {
 		: arrival(arr), exec_time(costs), parallelism(costs.begin()->first, costs.rbegin()->first),
 		  deadline(dl), priority(prio), id(id, tid), index(idx), type(j_type)
 		{
+			bcet = 0;
+			wcet = 0;
+			for (const auto& cost : costs) {
+				if (cost.second.min() < bcet || bcet == 0)
+					bcet = cost.second.min();
+				if (cost.second.max() > wcet)
+					wcet = cost.second.max();
+			}
 			compute_hash();
 		}
 
@@ -165,6 +175,8 @@ namespace NP {
 			deadline(dl), priority(prio), id(id, tid), index(idx), type(j_type)
 		{
 			exec_time.emplace(1, cost);
+			bcet = cost.min();
+			wcet = cost.max();
 			compute_hash();
 		}
 
@@ -234,6 +246,22 @@ namespace NP {
 				return Time_model::constants<Time>::infinity();
 			else
 				return cost->second.max();
+		}
+
+		/** 
+		 * @brief Get the best-case execution time for any level of parallelism.
+		 */
+		Time get_bcet() const
+		{
+			return bcet;
+		}
+
+		/** 
+		 * @brief Get the worst-case execution time for any level of parallelism.
+		 */
+		Time get_wcet() const
+		{
+			return wcet;
 		}
 
 		/** 

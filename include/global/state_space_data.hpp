@@ -272,6 +272,11 @@ namespace NP {
 			/**
 			 * @brief Check whether job j is certainly finished when the first core becomes available in state s within node n. 
 			 * NOTE: Assumes that job j is already dispatched with its finish time within the interval finish_time.
+			 * @param n The schedule node containing the state.
+			 * @param s The schedule state to query.
+			 * @param j The index of the job to check.
+			 * @param finish_time The finish time interval of job j.
+			 * @return true if num_cpus == 1 or FT^max(j) < A^min_2(s) or \exists k \in Succ^f(j) \cap Omega(s); false otherwise.
 			*/
 			bool is_certainly_finished(const Node& n, const State& s, const Job_index j, const Interval<Time>& finish_time) const
 			{
@@ -305,19 +310,56 @@ namespace NP {
 				return false;
 			}
 
-			// Assuming that:
-			// - `j_low` is dispatched next, and
-			// - `j_high` is of higher priority than `j_low`, and
-			// - all predecessors of `j_high` have been dispatched
-			//
-			// this function computes the latest ready time of `j_high` in system state 's'.
-			//
-			// Let `ready_low` denote the earliest time at which `j_low` becomes ready
-			// and let `latest_ready_high` denote the return value of this function.
-			//
-			// If `latest_ready_high <= `ready_low`, the assumption that `j_low` is dispatched next lead to a contradiction,
-			// hence `j_low` cannot be dispatched next. In this case, the exact value of `latest_ready_high` is meaningless,
-			// except that it must be at most `ready_low`. After all, it was computed under an assumption that cannot happen.
+			/**
+			 * @brief Assuming that `j_low` is dispatched next on ncores, find the latest time by which the higher priority job `j_high` 
+			 * 		  is certainly ready in system state 's' of node 'n'.
+			 *
+			 * Assuming that:
+			 * - `j_low` is dispatched next on ncores, and
+			 * - `j_high` is of higher priority than `j_low`, and
+			 * - all predecessors of `j_high` have been dispatched
+			 * this function computes the latest ready time of `j_high` in system state 's'. When calculating the ready time of `j_high`, 
+			 * this function discards all precedence constraints of j_high that are certainly fulfilled when `j_low` is dispatched.
+			 * 
+			 * Calculate: max{ r^max(j_high), 
+			 * 				   max_{k \in Pred^s(j_high)'} { ST^max(k,s) + delay^max(k,j_high) } },
+			 * 				   max_{k \in Pred^f(j_high)'} { FT^max(k,s) + delay^max(k,j_high) } },
+			 * 				   max_{k \in Excl^s(j_high)' \cap Omega(s)} { ST^max(k,s) + delay^max(k,j_high) } },
+			 * 				   max_{k \in Excl^f(j_high)' \cap Omega(s)} { FT^max(k,s) + delay^max(k,j_high) } } }
+			 * 			  where:
+			 * 				- Pred^s(j_high)' = Pred^s(j_high) \ {j | delay^max(j,j_high) = 0 }
+			 * 												   \ {j | j \in Pred^s(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) } 
+			 * 												   \ {j | j \in Pred^f(j_low) and C^min(j) + delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^s(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) } 
+			 * 												   \ {j | j \in Mutx^f(j_low) and C^min(j) + delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 			    - Pred^f(j_high)' = \begin{cases}
+			 * 									emptyset & if m = 1 (single core) \\
+			 * 									Pred^f(j_high) \ {j | delay^max(j,j_high) = 0 and (FT^max(j,s) < A^min_2(s) or \exists k \in Succ^f(j) \cap Omega(s)) }
+			 * 												   \ {j | j \in Pred^s(j_low) and delay^min(j,j_low) >= C^max(j) + delay^max(j,j_high) }
+			 * 												   \ {j | j \in Pred^f(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^s(j_low) and delay^min(j,j_low) >= C^max(j) + delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^f(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) } & if m > 1
+			 * 								    \end{cases}
+			 * 				- Mutx^s(j_high)' = Mutx^s(j_high) \ {j | j \in Pred^s(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 												   \ {j | j \in Pred^f(j_low) and C^min(j) + delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^s(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) } 
+			 * 												   \ {j | j \in Mutx^f(j_low) and C^min(j) + delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 			    - Mutx^f(j_high)' = \begin{cases}
+			 * 									emptyset & if m = 1 (single core) \\
+			 * 									Mutx^f(j_high) \ {j | delay^max(j,j_high) = 0 and (FT^max(j,s) < A^min_2(s) or \exists k \in Succ^f(j) \cap Omega(s)) }
+			 * 												   \ {j | j \in Pred^s(j_low) and delay^min(j,j_low) >= C^max(j) + delay^max(j,j_high) }
+			 * 												   \ {j | j \in Pred^f(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^s(j_low) and delay^min(j,j_low) >= C^max(j) + delay^max(j,j_high) }
+			 * 												   \ {j | j \in Mutx^f(j_low) and delay^min(j,j_low) >= delay^max(j,j_high) } & if m > 1
+			 * 								    \end{cases}
+			 * 
+			 * @param n The node state s belongs to.
+			 * @param s The state in which to search for the latest ready time.
+			 * @param j_high The higher priority job whose latest ready time is to be computed.
+			 * @param j_low The lower priority job that is assumed to be dispatched next.
+			 * @param j_low_required_cores The number of cores required by j_low when dispatched.
+			 * @return The latest time by which j_high is certainly ready in state s of node n.
+			 */
 			Time conditional_latest_ready_time(
 				const Node& n, const State& s,
 				const Job<Time>& j_high, const Job_index j_low,
@@ -347,14 +389,15 @@ namespace NP {
 					if (delay_max == 0) 
 						continue;
 
-					const auto pred_idx = prec.reference_job->get_job_index();
+					const auto& pred = *prec.reference_job;
+					const auto pred_idx = pred.get_job_index();
 					// skip if its also a predecessor of j_low and the delay to j_low's start can not be smaller than the delay to j_high's start
 					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(pred_idx);
 					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max) 
 						continue;
 
 					Time min_f2s_delay = inter_job_constraints[j_low].get_min_delay_after_finish_of(pred_idx);
-					if (min_f2s_delay != -1 && min_f2s_delay + prec.reference_job->least_exec_time() >= delay_max) 
+					if (min_f2s_delay != -1 && min_f2s_delay + pred.get_bcet() >= delay_max) 
 						continue;
 
 					Interval<Time> st{ 0, 0 };
@@ -369,19 +412,20 @@ namespace NP {
 
 				for (const auto& excl : cstr.between_starts)
 				{
+					const auto& other = *excl.reference_job;
 					// disregard this exclusion constraint if the job is not dispatched yet
-					if (!dispatched(n, *excl.reference_job))
+					if (!dispatched(n, other))
 						continue; 
 
 					const auto delay_max = excl.delay.max();
-					const auto other_idx = excl.reference_job->get_job_index();
+					const auto other_idx = other.get_job_index();
 					// skip if its also a predecessor of j_low and the delay to j_low's start can not be smaller than the delay to j_high's start
 					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(other_idx);
 					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max) 
 						continue;
 
 					Time min_f2s_delay = inter_job_constraints[j_low].get_min_delay_after_finish_of(other_idx);
-					if (min_f2s_delay != -1 && min_f2s_delay + excl.reference_job->least_exec_time() >= delay_max) 
+					if (min_f2s_delay != -1 && min_f2s_delay + other.get_bcet() >= delay_max) 
 						continue;
 
 					Interval<Time> st{ 0, 0 };
@@ -391,8 +435,8 @@ namespace NP {
 
 				for (const auto& prec : cstr.predecessors_finish_to_start)
 				{
-					const auto delay_max = prec.delay.max();
-					auto pred_idx = prec.reference_job->get_job_index();
+					const auto& pred = *prec.reference_job;
+					auto pred_idx = pred.get_job_index();
 					Interval<Time> ft{ 0, 0 };
 					bool has_ft = s.get_finish_times(pred_idx, ft);
 					if (!has_ft) {
@@ -403,6 +447,7 @@ namespace NP {
 
 					// If the delay is 0 and j_pred is certainly finished when j_low is dispatched, then j_pred cannot postpone
 					// the (latest) ready time of j_high.
+					const auto delay_max = prec.delay.max();
 					if (delay_max == 0 && is_certainly_finished(n, s, pred_idx, ft)) 
 						continue;
 
@@ -413,7 +458,7 @@ namespace NP {
 						continue;
 
 					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(pred_idx);
-					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max + prec.reference_job->least_exec_time()) 
+					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max + pred.get_wcet()) 
 						continue;
 
 					latest_ready_high = std::max(latest_ready_high, ft.max() + delay_max);
@@ -421,10 +466,11 @@ namespace NP {
 
 				for (const auto& excl : cstr.between_executions)
 				{
-					auto other_idx = excl.reference_job->get_job_index();
-					if (!dispatched(n, *excl.reference_job))
+					const auto& other = *excl.reference_job;
+					if (!dispatched(n, other))
 						continue; // disregard this exclusion constraint if the job is not dispatched yet
 
+					auto other_idx = other.get_job_index();
 					Interval<Time> ft{ 0, 0 };
 					s.get_finish_times(other_idx, ft);
 					const auto delay_max = excl.delay.max();
@@ -440,7 +486,7 @@ namespace NP {
 						continue;
 
 					Time min_s2s_delay = inter_job_constraints[j_low].get_min_delay_after_start_of(other_idx);
-					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max + excl.reference_job->least_exec_time())
+					if (min_s2s_delay != -1 && min_s2s_delay >= delay_max + other.get_wcet())
 						continue;
 
 					latest_ready_high = std::max(latest_ready_high, ft.max() + delay_max);
@@ -457,10 +503,18 @@ namespace NP {
 				return ready_times(n, s, j).min();
 			}
 
-			// Find next time by which a sequential source job (i.e., 
-			// a job without predecessors that can execute on a single core) 
-			// of higher priority than the reference_job
-			// is certainly released in any state in the node 'n'. 
+			/** 
+			 * @brief Find next time by which a sequential source job (i.e., a job without predecessors that can execute on a single core) 
+			 *		 of higher priority than the reference_job is certainly released in any state in the node 'n'. The release time
+			 *		 is searched within the interval [0, until).
+			 * 
+			 * Calculate: min{ until, min_{j \in SeqSourceJobs, prio(j) > prio(reference_job)} { r^max(j) } }
+			 *
+			 * @param n The node in which to search for the next release time.
+			 * @param reference_job The job whose priority is used as reference.
+			 * @param until Upper bound on the time interval in which to search.
+			 * @return The next time by which a sequential source job of higher priority than the reference_job is certainly released.
+			 */
 			Time next_certain_higher_priority_seq_source_job_release(
 				const Node& n,
 				const Job<Time>& reference_job,
@@ -493,10 +547,25 @@ namespace NP {
 				return when;
 			}
 
-			// Find next time by which a gang source job (i.e., 
-			// a job without predecessors that cannot execute on a single core) 
-			// of higher priority than the reference_job
-			// is certainly released in state 's' of node 'n'. 
+			/**
+			 * @brief Assuming that `reference_job` is dispatched next on ncores, find the next time by which a gang source job (i.e., 
+			 * 		  a job without predecessors that cannot execute on a single core)  of higher priority than the reference_job is 
+			 * 		  certainly released in state 's' of node 'n' and may interfere with the reference_job. 
+			 * 		  The release time is searched within the interval [lower_bound, until).
+			 * 
+			 * Calculate: min{ until, min_{j \in GangSourceJobs, prio(j) > prio(reference_job)} { \rho^max(j,s) }
+			 * 			  where \rho^max(j,s) = \begin{cases}
+			 * 										max( r^max(j), A^max_p^min(j)(s) ) } & if p^min(j) > ncores \\
+			 * 										r^max(j) & otherwise
+			 * 								    \end{cases}
+			 * 
+			 * @param n The node state s belongs to.
+			 * @param s The state in which to search for the next release time.
+			 * @param reference_job The job whose priority is used as reference.
+			 * @param ncores The number of cores on which the reference_job is dispatched.
+			 * @param lower_bound A lower bound on the time interval in which to search.
+			 * @param until An upper bound on the time interval in which to search.
+			 */
 			Time next_certain_higher_priority_gang_source_job_ready_time(
 				const Node& n,
 				const State& s,
@@ -550,15 +619,26 @@ namespace NP {
 				return when;
 			}
 
-			// Assuming that `reference_job` is dispatched next, find the earliest time by which a successor job (i.e., a job with predecessors) 
-			// of higher priority than the reference_job is certainly ready in system state 's'.
-			//
-			// Let `lower_bound` denote the earliest time at which `reference_job` becomes ready
-			// and let `latest_ready_high` denote the return value of this function.
-			//
-			// If `latest_ready_high <= `lower_bound`, the assumption that `reference_job` is dispatched next lead to a contradiction,
-			// hence `reference_job` cannot be dispatched next. In this case, the exact value of `latest_ready_high` is meaningless,
-			// except that it must be at most `lower_bound`. After all, it was computed under an assumption that cannot happen.
+			/**
+			 * @brief Assuming that `reference_job` is dispatched next on ncores, find the earliest time by which a successor job (i.e., 
+			 * 		  a job with predecessors) of higher priority than the reference_job is certainly ready in system state 's' of node 'n'.
+			 * 		  The ready time is searched within the interval [lower_bound, infinity).
+			 *
+			 * Calculate: min_{j \in SuccessorJobs, prio(j) > prio(reference_job)} { \rho^max(j,s) }
+			 * 			  where \rho^max(j,s) = \begin{cases}
+			 * 									  +infinity & \exists k \in CS(j) : prio(k) < prio(reference_job) \\
+			 * 									  max_{k \in CS(j)} { R^max(k|reference_job,s) } & otherwise
+			 * 								    \end{cases}
+			 * 			  and CS(j) is the set of conditional siblings of job j (including j itself),
+			 * 			  and R^max(k|reference_job,s) is the latest ready time of job k in state s knowing that `reference_job` is dispatched next on ncores.
+			 * 
+			 * @param n The node state s belongs to.
+			 * @param s The state in which to search for the next ready time.
+			 * @param reference_job The job whose priority is used as reference.
+			 * @param ncores The number of cores on which the reference_job is dispatched.
+			 * @param lower_bound A lower bound on the time interval in which to search.
+			 * @return The next time by which a successor job of higher priority than the reference_job is certainly ready.
+			 */
 			Time next_certain_higher_priority_successor_job_ready_time(
 				const Node& n,
 				const State& s,
@@ -590,8 +670,8 @@ namespace NP {
 									ready_max = Time_model::constants<Time>::infinity();
 									break;
 								}
-								latest_ready_high = std::min(latest_ready_high, ready_max);
 							}
+							latest_ready_high = std::min(latest_ready_high, ready_max);
 						} else {
 							latest_ready_high = std::min(latest_ready_high, conditional_latest_ready_time(n, s, j_high, reference_job.get_job_index(), ncores));
 						}
