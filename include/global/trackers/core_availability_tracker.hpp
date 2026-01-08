@@ -15,13 +15,12 @@ namespace Global {
  * @brief Manages core availability tracking and updates during state transitions.
  * 
  * This class encapsulates all logic related to tracking when processor cores
- * become available. It maintains a sorted list of availability intervals,
- * one per core, and provides efficient queries and updates.
+ * become available. It maintains a sorted list of availability intervals.
  * 
  * Invariants:
  * - The availability vector is always sorted by increasing availability times
  * - The vector size equals the number of cores in the system
- * - Each interval represents when a specific core becomes available
+ * - Each interval represents when a specific number of cores becomes available to execute new jobs
  */
 template<class Time>
 class Core_availability_tracker
