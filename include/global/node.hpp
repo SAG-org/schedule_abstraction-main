@@ -4,7 +4,7 @@
 #include <cassert>
 #include <iostream>
 #include <ostream>
-#include <set>
+#include <vector>
 
 #ifdef CONFIG_PARALLEL
 #include <tbb/spin_rw_mutex.h>
@@ -96,7 +96,8 @@ namespace NP {
 			};
 
 			/** list of states contained in this node */
-			typedef typename std::multiset<State_ref, eft_compare> State_ref_queue;
+			//typedef typename std::multiset<State_ref, eft_compare> State_ref_queue;
+			typedef std::vector<State_ref> State_ref_queue;
 			State_ref_queue states;
 
 		public:
@@ -438,7 +439,7 @@ namespace NP {
 				tbb::spin_rw_mutex::scoped_lock lock(states_mutex, true); // write lock
 #endif
 				update_internal_variables(s);
-				states.insert(s);
+				states.push_back(s);
 			}
 
 			/**
