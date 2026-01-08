@@ -87,9 +87,9 @@ namespace NP {
 		// The type of a node in conditional DAGs (i.e., normal, conditional fork or condition join)
 		// by default all jobs are normal jobs
 		enum Job_type {
-			NORMAL,
-			C_FORK,
-			C_JOIN
+			NORMAL = 0,
+			C_FORK = 1,
+			C_JOIN = 2
 		};
 	private:
 		Interval<Time> arrival; // arrival time window

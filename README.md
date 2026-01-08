@@ -1,6 +1,6 @@
 # NP Schedulability Test
 
-This repository contains the implementations of schedulability tests for **sets of non-preemptive moldable gang jobs** with **precedence constraints**, **self-suspension delays**, **dispatch ordering constraints** and **mutual exclusions** scheduled on either **uniprocessor** or **globally scheduled identical multiprocessors**. The analyses are described in the following papers:
+This repository contains the implementations of schedulability tests for **sets of non-preemptive moldable gang jobs** with **precedence constraints**, **conditional branching**, **self-suspension delays**, **dispatch ordering constraints** and **mutual exclusions** scheduled on either **uniprocessor** or **globally scheduled identical multiprocessors**. The analyses are described in the following papers:
 
 - M. Nasri and B. Brandenburg, “[An Exact and Sustainable Analysis of Non-Preemptive Scheduling](https://people.mpi-sws.org/~bbb/papers/pdf/rtss17.pdf)”, *Proceedings of the 38th IEEE Real-Time Systems Symposium (RTSS 2017)*, pp. 12–23, December 2017.
 - M. Nasri, G. Nelissen, and B. Brandenburg, “[Response-Time Analysis of Limited-Preemptive Parallel DAG Tasks under Global Scheduling](http://drops.dagstuhl.de/opus/volltexte/2019/10758/pdf/LIPIcs-ECRTS-2019-21.pdf)”, *Proceedings of the 31st Euromicro Conference on Real-Time Systems (ECRTS 2019)*, pp. 21:1–21:23, July 2019.
@@ -118,6 +118,7 @@ Job set input CSV files describe a set of jobs, where each row specifies one job
 6.   **Cost max** — the worst-case execution time of the job
 7.   **Deadline** — the absolute deadline of the job
 8.   **Priority** — the priority of the job (EDF: set it equal to the deadline)
+9.   **Job type** [optional] — specifies whether the job is a normal (0), a conditional switch entry (1), or a conditional switch exit (2). Default value is 0 (i.e., "normal"). A conditional switch entry means that only one of the successors of the job will be executed. A conditional switch exit means that predecessors of the jobs are mutually exclusive and thus a single predecessor must complete for the job to become ready. If a job is normal, then all its predecessors must complete for the job to become ready, and all its successors must be executed. The job type is used to define C-DAGs with conditional branching.
 
 Gang jobs (i.e., jobs that may require more than one core to start executing) use the following format.
 
