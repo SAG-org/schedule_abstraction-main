@@ -534,6 +534,10 @@ namespace NP {
 
 				merge(other.core_avail, other.job_start_times, other.job_finish_times, other.certain_running_jobs, other.certain_dispatch_times, other.min_next_prio_job);
 
+#ifdef CONFIG_ANALYSIS_EXTENSIONS
+				extensions.merge(*this, other);
+#endif // CONFIG_ANALYSIS_EXTENSIONS
+
 				DM("+++ merged " << other << " into " << *this << std::endl);
 				return true;
 			}
