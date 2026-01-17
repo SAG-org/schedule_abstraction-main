@@ -68,25 +68,28 @@ public:
         const Inter_job_constraints<Time>& constraints,
         const Job_set& scheduled_jobs)
     {
-        // Update start successors
-        jobs_with_pending_start_succ.clear();
-        update_pending_list(
-            from.jobs_with_pending_start_succ,
-            dispatched_jobs,
-            constraints,
-            start_constraints,
-            scheduled_jobs,
-            jobs_with_pending_start_succ);
-
-        // Update finish successors
-        jobs_with_pending_finish_succ.clear();
-        update_pending_list(
-            from.jobs_with_pending_finish_succ,
-            dispatched_jobs,
-            constraints,
-            finish_constraints,
-            scheduled_jobs,
-            jobs_with_pending_finish_succ);
+        if (constraints.has_start_to_start_constraints()) {
+            // Update start successors
+            jobs_with_pending_start_succ.clear();
+            update_pending_list(
+                from.jobs_with_pending_start_succ,
+                dispatched_jobs,
+                constraints,
+                start_constraints,
+                scheduled_jobs,
+                jobs_with_pending_start_succ);
+        }
+        if (constraints.has_finish_to_start_constraints()) {        
+            // Update finish successors
+            jobs_with_pending_finish_succ.clear();
+            update_pending_list(
+                from.jobs_with_pending_finish_succ,
+                dispatched_jobs,
+                constraints,
+                finish_constraints,
+                scheduled_jobs,
+                jobs_with_pending_finish_succ);
+        }
     }
 
     void clear()

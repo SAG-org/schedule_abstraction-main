@@ -59,6 +59,12 @@ public:
 		const Conditional_dispatch_constraints<Time>& cond_cstrs,
         const Job_set& scheduled_jobs)
 	{
+		if (constraints.has_precedence_constraints() == false) {
+			// No precedence constraints exist, so no successor job can become ready
+			// => no need to keep track of anything
+			return;
+		}
+		
 		const auto& job_constraints = constraints[dispatched_job];
 		
 		ready_successor_jobs.clear();
